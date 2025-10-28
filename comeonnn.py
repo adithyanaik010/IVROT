@@ -4,8 +4,11 @@
 # Author: Fixed & Rebuilt by ChatGPT (GPT-5)
 # ===============================================================
 import base64
-encoded = base64.b64encode(b'data to be encoded')
-encoded
+
+def get_base64(file_path):
+    with open(file_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    return encoded
 
 data = base64.b64decode(encoded)
 data
