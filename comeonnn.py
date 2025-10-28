@@ -284,8 +284,8 @@ st.markdown(
     .ivrot-nav-row button,
     .stButton > button,
     div.stButton > button {
-      background: white !important;
-      color: black !important;
+      background: var(--ivrot-bg) !important;
+      color: var(--ivrot-text) !important;
       border: 1px solid var(--ivrot-border) !important;
       padding: 14px 24px !important; /* bigger buttons */
       border-radius: 12px !important;
@@ -369,7 +369,7 @@ feedback_css = (
     "}\n"
     "div[data-testid=\"stExpander\"] .stButton > button,\n"
     ".stExpander .stButton > button {\n"
-    "  color: var(--ivrot-feedback-text) !important;\n  border-color: rgba(0,0,0,0.08) !important;\n"
+    "  color: var(--ivrot-text) !important;background: var(--ivrot-bg) !important;\n  border-color: white !important;\n"
     "}\n"
     "</style>\n"
 )
@@ -797,6 +797,7 @@ elif st.session_state["nav"] == "HISTORY":
         st.dataframe(df,use_container_width=True)
     except Exception as e:
         st.error(f"Error loading CSV: {e}")
+
 
 
 
