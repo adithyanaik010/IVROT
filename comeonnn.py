@@ -1,4 +1,9 @@
-# app.py  (complete integrated IVROT app with splash + non-blocking loading overlay)
+# app.py
+# IVROT full app with splash + blocking-but-rendered loading overlay (no threads / no experimental_rerun)
+# Put your videos in same dir:
+#  - Splash: YouCut_20251028_153909796.mp4
+#  - Loading: IVROT_20251028_150435_0000-vmake.mp4
+
 import streamlit as st
 from pathlib import Path
 import base64
@@ -10,42 +15,49 @@ import math
 from datetime import datetime, timedelta, date
 import geopandas as gpd
 from shapely.geometry import Point
-
-# --- Added imports for resistance plotting (minimal addition) ---
 import numpy as np
 import matplotlib.pyplot as plt
 from io import StringIO
 import os
 import csv
-import threading
 import time
 import traceback
 
-# ------------------ VIDEO OVERLAY HELPERS ------------------
-# Filenames for videos (adjust if necessary)
+# ------------------------- Configuration & helpers -------------------------
+st.set_page_config(page_title="IVROT", layout="wide", page_icon="🎥")
+
+# Filenames for videos (edit if different)
 SPLASH_VIDEO_FILE = "YouCut_20251028_153909796.mp4"
 LOADING_VIDEO_FILE = "IVROT_20251028_150435_0000-vmake.mp4"
 
-def read_file_base64(path):
-    """Return base64 string for a file; on error return empty string."""
+# Images / icons used by UI (if present)
+BG_IMAGE = r"Navigation_2.jpg"
+LOGO_LIGHT_PNG = Path(r"IVROT-removebg-preview.png")
+LOGO_DARK_PNG = Path(r"DARK-removebg-preview.png")
+LOGO_LIGHT_JPG = LOGO_LIGHT_PNG.with_suffix(".jpg")
+LOGO_DARK_JPG = LOGO_DARK_PNG.with_suffix(".jpg")
+ICO_PATH = Path(r"IVROT.ico")
+
+CSV_PATH = r"voyages.csv"
+SHIP_CSV = r"ship_data.csv"
+
+# ---------- Utility to convert binary file to base64 for inline data: URIs ----------
+def read_file_base64_safe(path):
     try:
         with open(path, "rb") as f:
-            b = f.read()
-        return base64.b64encode(b).decode("utf-8")
-    except Exception as e:
-        # don't crash the app if video missing
-        print(f"Failed to read {path}: {e}")
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception:
         return ""
 
-# Cache the base64 conversions to avoid re-reading on every rerun
+# Cache the base64 conversions to avoid repeated reads on reruns
 @st.cache_data(show_spinner=False)
-def get_base64_for_video(path):
-    return read_file_base64(path)
+def get_base64(path):
+    return read_file_base64_safe(path)
 
-def embed_video_overlay_html(base64_video, loop=False, overlay_id="loading-overlay"):
-    """Return HTML string for a full-screen overlay video using a base64 data URI."""
-    if not base64_video:
-        return ""  # nothing to show
+# Helper to create overlay HTML for a base64-encoded mp4
+def overlay_video_html(base64_mp4, loop=False, overlay_id="overlay"):
+    if not base64_mp4:
+        return ""
     loop_attr = "loop" if loop else ""
     html = f"""
     <div id="{overlay_id}" style="
@@ -59,56 +71,13 @@ def embed_video_overlay_html(base64_video, loop=False, overlay_id="loading-overl
         z-index: 999999;
     ">
         <video autoplay {loop_attr} muted playsinline style="width:100vw; height:100vh; object-fit: contain; background:white; outline:none;">
-            <source src="data:video/mp4;base64,{base64_video}" type="video/mp4">
+            <source src="data:video/mp4;base64,{base64_mp4}" type="video/mp4">
         </video>
     </div>
     """
     return html
 
-# ------------------ CUSTOM CSS ------------------
-st.set_page_config(page_title="IVROT", layout="wide", page_icon="🎥")
-
-st.markdown(
-    """
-    <style>
-    /* Reduce top padding of header so buttons are visible */
-    header { 
-        height: 5px;
-        padding: 0px 0px;
-    }
-
-    /* Move main content down slightly */
-    .block-container {
-        padding-top: 1px;
-    }
-
-    /* Optional: adjust button margin if still hidden */
-    button {
-        margin-top: 2px;
-    }
-
-    /* Ensure body background is white by default (app-level components will override later) */
-    body, .stApp {
-        background-color: white;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# ------------------ YOUR APP ------------------
-
-# ---------- Paths (update if needed) ----------
-BG_IMAGE = r"Navigation_2.jpg"
-LOGO_LIGHT_PNG = Path(r"IVROT-removebg-preview.png")
-LOGO_DARK_PNG = Path(r"DARK-removebg-preview.png")
-LOGO_LIGHT_JPG = LOGO_LIGHT_PNG.with_suffix(".jpg")
-LOGO_DARK_JPG = LOGO_DARK_PNG.with_suffix(".jpg")
-ICO_PATH = Path(r"IVROT.ico")
-CSV_PATH = r"voyages.csv"
-SHIP_CSV = r"ship_data.csv"
-
-# ---------- Helpers ----------
+# Helper for embedding small images as data URIs for CSS
 def file_to_data_uri(path: Path):
     if not path.exists():
         return ""
@@ -127,9 +96,7 @@ logo_light_uri = file_to_data_uri(logo_light_path) if logo_light_path.exists() e
 logo_dark_uri = file_to_data_uri(logo_dark_path) if logo_dark_path.exists() else ""
 ico_uri = file_to_data_uri(ICO_PATH) if ICO_PATH.exists() else ""
 
-# -----------------------------
-# --- Resistance utilities (MINIMAL ADDITION) ---
-# -----------------------------
+# ------------------------- Minimal resistance models (kept from your app) -------------------------
 def resistance_hol(Lpp, B, T, V, rho, nu, Cb, S, lcb, Cwp, Cp, Cm, Abt, hb, At, Cstern, iE, dCF):
     Re = V * Lpp / nu if nu and Lpp else 0.0
     Cf = 0.075 / ((np.log10(Re) - 2) ** 2) if Re > 0 else 0.0
@@ -150,7 +117,7 @@ def resistance_van(LWL, B, T, V, rho, nu, nabla, S, Cp, k2_factor):
     Rt = Rf + Rr
     return {'Rt': Rt, 'Rf': Rf, 'Rr': Rr}
 
-# default embedded ship CSV (used if ship_data.csv missing)
+# ---------- default ship CSV content (fallback) ----------
 csv_data = """ShipType,v,rho,nu,LWL,LPP,Ld,B,T,nabla,S,Cp,Cm,lcb,iE,dCF,CB,CWP,ABT,hB,AT,Cstern,Sapp,k2_factor
 Cargo Ship,15,1025,1.19E-06,140,135,N/A,22,8.5,12000,3400,0.68,0.99,-1.5,22,0.0005,0.67,0.78,30,4.5,25,80,30,0.3
 Tanker,14,1025,1.19E-06,240,230,N/A,42,15.5,85000,14500,0.81,0.995,0.5,18,0.0005,0.8,0.88,80,8,70,120,80,0.3
@@ -159,7 +126,7 @@ Passenger,20,1025,1.19E-06,210,200,N/A,28,8,30000,6800,0.7,0.99,0.8,15,0.0005,0.
 Fishing Vessel,12,1025,1.19E-06,45,42,43.5,9.5,4.5,750,550,0.62,0.9,-3.5,30,0.0005,0.55,0.85,0,0,0,5,0,0.05
 """
 
-# load ship data CSV if available, else fallback to embedded
+# ---------- load ship_data.csv or fallback ----------
 if os.path.exists(SHIP_CSV):
     try:
         res_df = pd.read_csv(SHIP_CSV)
@@ -176,7 +143,6 @@ else:
     except Exception:
         pass
 
-# ---------- CSV helpers for voyages & ships ----------
 FIELDNAMES = [
     "TIMESTAMP", "START_LAT", "START_LON", "END_LAT", "END_LON",
     "SHIP_TYPE", "SHIP_SPEED_KNOTS", "ETD", "ETA",
@@ -185,12 +151,10 @@ FIELDNAMES = [
     "NUM_WAYPOINTS", "NUM_CLUSTERS",
     "FEEDBACK_RATING", "FEEDBACK_TEXT"
 ]
-
 SHIP_FIELDS = list(res_df.columns)
 
 def ensure_csv_exists(path, header_fields=None):
     if not os.path.exists(path):
-        # create file with header
         with open(path, "w", newline="", encoding="utf-8") as f:
             if header_fields:
                 writer = csv.DictWriter(f, fieldnames=header_fields, quoting=csv.QUOTE_MINIMAL)
@@ -200,7 +164,6 @@ def ensure_csv_exists(path, header_fields=None):
 
 def append_voyage_to_csv(path, data):
     ensure_csv_exists(path, FIELDNAMES)
-    # ensure all keys exist
     row = {k: ("" if data.get(k) is None else data.get(k)) for k in FIELDNAMES}
     with open(path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES, quoting=csv.QUOTE_MINIMAL)
@@ -209,20 +172,15 @@ def append_voyage_to_csv(path, data):
 def update_feedback_in_csv(path, timestamp, rating, text):
     try:
         ensure_csv_exists(path, FIELDNAMES)
-        # read raw lines
         with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
-
         if not lines:
             return False
-
         updated_rows = []
         found = False
-
         for raw in lines[1:]:
             raw = raw.rstrip("\n")
             parts = raw.split(",")
-            # combine extra splits into last field (FEEDBACK_TEXT) if the line had unquoted commas
             if len(parts) > len(FIELDNAMES):
                 fixed = parts[: len(FIELDNAMES) - 1] + [",".join(parts[len(FIELDNAMES) - 1 :])]
                 parts = fixed
@@ -234,29 +192,23 @@ def update_feedback_in_csv(path, timestamp, rating, text):
                 row["FEEDBACK_TEXT"] = text
                 found = True
             updated_rows.append(row)
-
         if not found:
             new_row = {k: "" for k in FIELDNAMES}
             new_row["TIMESTAMP"] = timestamp
             new_row["FEEDBACK_RATING"] = str(rating)
             new_row["FEEDBACK_TEXT"] = text
             updated_rows.append(new_row)
-
-        # write back using csv writer to properly quote fields
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=FIELDNAMES, quoting=csv.QUOTE_MINIMAL)
             writer.writeheader()
             for r in updated_rows:
                 out = {k: ("" if r.get(k) is None else r.get(k)) for k in FIELDNAMES}
                 writer.writerow(out)
-
         return True
-
     except Exception as e:
         st.error(f"Failed to update feedback in CSV: {e}")
         return False
 
-# helpers for ship CSV
 def save_ship_df(df):
     try:
         df.to_csv(SHIP_CSV, index=False)
@@ -265,50 +217,26 @@ def save_ship_df(df):
         st.error(f"Failed to save ship data: {e}")
         return False
 
-# ---------- Session state defaults ----------
-if "theme_flag" not in st.session_state:
-    st.session_state["theme_flag"] = 0
-if "nav" not in st.session_state:
-    st.session_state["nav"] = "HOME"
-# flags for route & resistance UI
-if "route_generated" not in st.session_state:
-    st.session_state["route_generated"] = False
-if "show_res" not in st.session_state:
-    st.session_state["show_res"] = False
-# flags for voyage saving & feedback
-if "voyage_saved" not in st.session_state:
-    st.session_state["voyage_saved"] = False
-if "voyage_timestamp" not in st.session_state:
-    st.session_state["voyage_timestamp"] = None
-if "feedback_rating" not in st.session_state:
-    st.session_state["feedback_rating"] = 3
-if "feedback_text" not in st.session_state:
-    st.session_state["feedback_text"] = "Average: Routine voyage with some manageable issues."
-if "open_feedback" not in st.session_state:
-    st.session_state["open_feedback"] = False
+# ------------------------- Session defaults -------------------------
+if "theme_flag" not in st.session_state: st.session_state["theme_flag"] = 0
+if "nav" not in st.session_state: st.session_state["nav"] = "HOME"
+if "route_generated" not in st.session_state: st.session_state["route_generated"] = False
+if "show_res" not in st.session_state: st.session_state["show_res"] = False
+if "voyage_saved" not in st.session_state: st.session_state["voyage_saved"] = False
+if "voyage_timestamp" not in st.session_state: st.session_state["voyage_timestamp"] = None
+if "feedback_rating" not in st.session_state: st.session_state["feedback_rating"] = 3
+if "feedback_text" not in st.session_state: st.session_state["feedback_text"] = "Average: Routine voyage with some manageable issues."
+if "open_feedback" not in st.session_state: st.session_state["open_feedback"] = False
+if "ship_df" not in st.session_state: st.session_state["ship_df"] = res_df.copy()
+if "ship_editor_state" not in st.session_state: st.session_state["ship_editor_state"] = {"mode": None}
+if "start" not in st.session_state: st.session_state.start = [None, None]
+if "end" not in st.session_state: st.session_state.end = [None, None]
+if "route" not in st.session_state: st.session_state.route = None
+if "clusters" not in st.session_state: st.session_state.clusters = []
+if "splash_played" not in st.session_state: st.session_state.splash_played = False
 
-# keep ship dataframe in session for responsiveness
-if "ship_df" not in st.session_state:
-    st.session_state["ship_df"] = res_df.copy()
-
-if "ship_editor_state" not in st.session_state:
-    st.session_state["ship_editor_state"] = {"mode": None}
-
-if "show_loading" not in st.session_state:
-    st.session_state["show_loading"] = False
-
-if "splash_played" not in st.session_state:
-    st.session_state["splash_played"] = False
-if "show_splash" not in st.session_state:
-    st.session_state["show_splash"] = False
-if "task_done" not in st.session_state:
-    st.session_state["task_done"] = False
-
-# ---------- THEME TOGGLE ----------
-def toggle_theme_flag():
-    st.session_state["theme_flag"] = 1 if st.session_state["theme_flag"] == 0 else 0
-
-# ---------- Inject CSS ----------
+# ------------------------- CSS + header -------------------------
+# Small layout CSS and theme variables
 if st.session_state["theme_flag"] == 0:
     root_vars = """
     :root {
@@ -330,324 +258,106 @@ else:
     """
     set_dark_script = "<script>document.documentElement.classList.add('dark')</script>"
 
-# Use a single f-string only where safe (root_vars inserted); other large CSS blocks will be concatenated to avoid brace parsing.
 st.markdown(
-    "<style>\n" + root_vars + """
-    /* background */
-    [data-testid="stAppViewContainer"] {
-      background: url(\"""" + bg_uri + """\") no-repeat center center fixed;
+    "<style>\n" + root_vars + f"""
+    [data-testid="stAppViewContainer"] {{
+      background: url("{bg_uri}") no-repeat center center fixed;
       background-size: cover;
-    }
-
-    /* Header (styles kept the same) */
-    .ivrot-header {
-      position:  flexible;  
-      top: 25px;
-      left: 0;
-      right: 0;
-      width: 100d%;
-      height: 25%;
-      z-index: 999;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 50px;
-      box-sizing: border-box;
-      border-radius: 0 0 12px 12px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-      transition: background-color 200ms ease, color 200ms ease;
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      overflow: visible !important;
-    }
-
-    .ivrot-left { display:flex; align-items:center; gap:16px; min-width:40px; }
-    .ivrot-left img { height:200px; width:auto; display:block; }
-
-    .ivrot-center { display:flex; flex-direction:column; align-items:left; gap:5px; flex:1 1 auto; }
-    .ivrot-title { font-weight:800; font-size:50px; margin:0; color:var(--ivrot-text) !important; }
-    .ivrot-subtitle { font-size:30px; margin:0; opacity:0.85; color:var(--ivrot-text) !important; }
-
-    .ivrot-nav-row {
-      display:flex;
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      flex-direction:column;
-      gap:16px; /* increased gap between buttons */
-      align-items:center;
-      margin-top:20px; /* lowered buttons below header */
-      transform: translateY(40px); /* move buttons lower */
-      transition: transform 160ms ease;
-      pointer-events: auto;
-    }
-
-    .ivrot-nav-row button,
-    .stButton > button,
-    div.stButton > button {
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-border) !important;
-      padding: 14px 24px !important; /* bigger buttons */
-      border-radius: 12px !important;
-      font-weight:700 !important;
-      cursor:pointer !important;
-      font-size:18px !important; /* larger text */
-      transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease !important;
-    }
-
-    .ivrot-nav-row button:hover,
-    .stButton > button:hover,
-    div.stButton > button:hover {
-      transform: translateY(-2px) !important;
-      box-shadow: var(--ivrot-hover-shadow) !important;
-    }
-
-    .ivrot-nav-row button[data-active="true"],
-    .stButton > button[data-active="true"],
-    div.stButton > button[data-active="true"] {
-      box-shadow: none !important;
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      border-width: 2px !important;
-    }
-
-    .ivrot-right button {
-      background: var(--ivrot-bg) !important; 
-      border: none !important;
-      font-size:20px !important;
-      cursor:pointer !important;
-      padding:8px !important;
-      border-radius:8px !important;
-      color: var(--ivrot-text) !important;
-      font-weight:700 !important;
-    }
-    .ivrot-right button:hover { background: rgba(0,0,0,0.06) !important; }
-
-    @media (max-width: 800px) {
-      .ivrot-left img { height:64px; }
-      .ivrot-title { font-size:16px; }
-      .ivrot-nav-row { margin-top:10px; transform: translateY(24px); }
-      .ivrot-nav-row button { padding:10px 16px; font-size:16px; }
-      .ivrot-header { padding:10px 14px; }
-    }
-
-    /* Sidebar theming: ensure all form controls and labels match theme variables */
-    div[data-testid="stSidebar"] * {
-      color: var(--ivrot-text) !important;
-    }
-
-    div[data-testid="stSidebar"] input,
-    div[data-testid="stSidebar"] textarea,
-    div[data-testid="stSidebar"] select,
-    div[data-testid="stSidebar"] .stTextInput>div>input,
-    div[data-testid="stSidebar"] .stNumberInput>div>input,
-    div[data-testid="stSidebar"] .stSelectbox>div>div,
-    div[data-testid="stSidebar"] .stSlider>div,
-    div[data-testid="stSidebar"] .stSlider>div label {
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-text) !important;
-      box-shadow: none !important;
-    }
-
-    /* Make sure dropdown arrow and selected value area also follow theme */
-    div[data-testid="stSidebar"] .stSelectbox select,
-    div[data-testid="stSidebar"] .stSelectbox div[role="listbox"],
-    div[data-testid="stSidebar"] .stSelectbox .st-bg {
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-text) !important;
-    }
-
-    /* Labels, helper text and slider titles in sidebar */
-    div[data-testid="stSidebar"] label,
-    div[data-testid="stSidebar"] .css-1adrfps,
-    div[data-testid="stSidebar"] .css-1v3fvcr {
-      color: var(--ivrot-text) !important;
-    }
-
-    /* Ensure buttons in sidebar also match theme */
-    div[data-testid="stSidebar"] .stButton > button,
-    div[data-testid="stSidebar"] button {
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-text) !important;
-    }
-
+    }}
+    header {{ height: 5px; padding: 0; }}
+    .block-container {{ padding-top: 1px; }}
+    .ivrot-header {{ position: relative; top: 25px; left:0; right:0; display:flex; align-items:center; justify-content:space-between; padding:8px 50px; box-sizing:border-box; background:var(--ivrot-bg) !important; color:var(--ivrot-text) !important; border-radius:0 0 12px 12px; box-shadow:0 8px 24px rgba(0,0,0,0.12); }}
+    .ivrot-left img {{ height:200px; width:auto; display:block; }}
+    .ivrot-title {{ font-weight:800; font-size:50px; margin:0; color:var(--ivrot-text) !important; }}
+    .ivrot-subtitle {{ font-size:30px; margin:0; opacity:0.85; color:var(--ivrot-text) !important; }}
+    .ivrot-nav-row {{ display:flex; gap:16px; align-items:center; margin-top:20px; transform:translateY(40px); }}
+    .ivrot-nav-row button, .stButton > button {{ padding:14px 24px !important; border-radius:12px !important; font-weight:700 !important; }}
+    @media (max-width: 800px) {{
+      .ivrot-left img {{ height:64px; }} .ivrot-title {{ font-size:16px; }} .ivrot-nav-row {{ margin-top:10px; transform: translateY(24px); }} .ivrot-header {{ padding:10px 14px; }}
+    }}
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
-
 st.markdown(set_dark_script, unsafe_allow_html=True)
 
-# --- Feedback box solid background (white in light theme, dark in dark theme) ---
-if st.session_state.get('theme_flag', 0) == 0:
-    fb_bg = "#ffffff"
-    fb_text = "#0f1724"
-else:
-    fb_bg = "#0b1220"
-    fb_text = "#f8fafc"
-
-feedback_css = (
-    "<style>\n"
-    ":root { --ivrot-feedback-bg: " + fb_bg + "; --ivrot-feedback-text: " + fb_text + "; }\n"
-    "div[data-testid=\"stExpander\"] > .stExpanderHeader,\n"
-    "div[data-testid=\"stExpander\"] > .stExpanderContent,\n"
-    ".stExpander,\n"
-    ".streamlit-expander,\n"
-    ".st-expander,\n"
-    ".stExpanderHeader,\n"
-    ".stExpanderContent {\n"
-    "  background: var(--ivrot-bg) !important;\n"
-    "  color: var(--ivrot-text) !important;\n"
-    "  padding: 12px 14px !important;\n"
-    "  border-radius: 10px !important;\n"
-    "  box-shadow: none !important;\n"
-    "}\n"
-    "div[data-testid=\"stExpander\"] textarea,\n"
-    "div[data-testid=\"stExpander\"] input,\n"
-    ".stExpander textarea,\n"
-    ".stExpander input {\n"
-    "  color: var(--ivrot-text) !important;\n"
-    "  background: var(--ivrot-bg) !important;\n"
-    "}\n"
-    "div[data-testid=\"stExpander\"] .stButton > button,\n"
-    ".stExpander .stButton > button {\n"
-    "  color: var(--ivrot-text) !important;background: var(--ivrot-bg) !important;\n  border-color: var(--ivrot-text) !important;\n"
-    "}\n"
-    "</style>\n"
-)
-
-st.markdown(feedback_css, unsafe_allow_html=True)
-
-
-# ---------- Header HTML ----------
 logo_uri = logo_light_uri if st.session_state["theme_flag"] == 0 else logo_dark_uri
 logo_html = f'<img src="{logo_uri}" alt="IVROT logo">' if logo_uri else "<div style='font-weight:800'>IVROT</div>"
 
-st.markdown(
-    f"""
-    <div class="ivrot-header" role="banner" aria-label="IVROT header">
-      <div class="ivrot-left">{logo_html}</div>
-      <div class="ivrot-center">
-        <div>
-          <div class="ivrot-title">IVROT</div>
-          <div class="ivrot-subtitle">Integrated Vessel Route Optimisation Toolkit</div>
-        </div>
-        <div class="ivrot-nav-row" id="nav-buttons-placeholder" style="display:flex; gap:10px;"></div>
-      </div>
-      <div class="ivrot-right" id="theme-toggle-placeholder"></div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown(f"""
+<div class="ivrot-header" role="banner">
+  <div class="ivrot-left">{logo_html}</div>
+  <div style="display:flex; flex-direction:column; gap:6px;">
+    <div class="ivrot-title">IVROT</div>
+    <div class="ivrot-subtitle">Integrated Vessel Route Optimisation Toolkit</div>
+  </div>
+  <div class="ivrot-right"></div>
+</div>
+""", unsafe_allow_html=True)
 
-# ---------- Header Buttons ----------
+# header buttons
 c1, c2, c3 = st.columns([1,4,1])
 with c2:
-    # create 4 nav buttons in the center
-    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([1,1,1,1])
-    with col_nav1:
-        if st.button("HOME", key="nav_home"):
-            st.session_state["nav"] = "HOME"
-    with col_nav2:
-        if st.button("NEW TRAJECTORY", key="nav_new"):
-            st.session_state["nav"] = "NEW TRAJECTORY"
-    with col_nav3:
-        if st.button("HISTORY", key="nav_hist"):
-            st.session_state["nav"] = "HISTORY"
-    with col_nav4:
-        if st.button("SHIP DATA", key="nav_shipdata"):
-            st.session_state["nav"] = "SHIP DATA"
-
+    nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1,1,1,1])
+    with nav_col1:
+        if st.button("HOME", key="nav_home"): st.session_state["nav"] = "HOME"
+    with nav_col2:
+        if st.button("NEW TRAJECTORY", key="nav_new"): st.session_state["nav"] = "NEW TRAJECTORY"
+    with nav_col3:
+        if st.button("HISTORY", key="nav_hist"): st.session_state["nav"] = "HISTORY"
+    with nav_col4:
+        if st.button("SHIP DATA", key="nav_shipdata"): st.session_state["nav"] = "SHIP DATA"
 with c3:
     icon = "☼" if st.session_state["theme_flag"] == 0 else "☽"
     if st.button(icon, key="theme_toggle_btn"):
-        toggle_theme_flag()
+        st.session_state["theme_flag"] = 1 if st.session_state["theme_flag"] == 0 else 0
         if st.session_state["theme_flag"] == 1:
             st.markdown("<script>document.documentElement.classList.add('dark')</script>", unsafe_allow_html=True)
         else:
             st.markdown("<script>document.documentElement.classList.remove('dark')</script>", unsafe_allow_html=True)
 
-# ---------- Active button highlight ----------
+# active nav highlight (JS)
 active = st.session_state["nav"]
-js_str = (
-    "<script>"
-    "const btns = document.querySelectorAll('.ivrot-nav-row button, .stButton > button, div.stButton > button');"
-    "btns.forEach(b => b.removeAttribute('data-active'));"
-    "btns.forEach(b => {"
-    "  const txt = (b.innerText || b.textContent || '').trim().toUpperCase();"
-    "  if (txt === \"" + str(active) + "\") {"
-    "    b.setAttribute('data-active', 'true');"
-    "  }"
-    "});"
-    "</script>"
-)
-st.markdown(js_str, unsafe_allow_html=True)
+st.markdown(f"""
+<script>
+const btns = document.querySelectorAll('.ivrot-nav-row button, .stButton > button, div.stButton > button');
+btns.forEach(b => b.removeAttribute('data-active'));
+btns.forEach(b => {{
+  const txt = (b.innerText || b.textContent || '').trim().toUpperCase();
+  if (txt === "{active}") b.setAttribute('data-active','true');
+}});
+</script>
+""", unsafe_allow_html=True)
 
-# ---------- VIDEO OVERLAY RENDERING ----------
-# Prepare base64 for splash and loading videos (cached)
-splash_base64 = get_base64_for_video(SPLASH_VIDEO_FILE)  # may be empty if file missing
-loading_base64 = get_base64_for_video(LOADING_VIDEO_FILE)
+# ------------------------- Splash handling (synchronous) -------------------------
+splash_b64 = get_base64(SPLASH_VIDEO_FILE)
+loading_b64 = get_base64(LOADING_VIDEO_FILE)
 
-# If splash hasn't been played yet, start a thread to show it for a fixed duration
-SPLASH_DURATION = 8.0  # seconds - adjust to match your intro video length
+SPLASH_DURATION = 6.5  # adjust to actual video length (seconds)
 
-def _splash_worker():
+if not st.session_state.splash_played:
+    # show splash overlay synchronously (the browser will render and play while we wait)
+    placeholder_splash = st.empty()
+    if splash_b64:
+        placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False, overlay_id="splash"), unsafe_allow_html=True)
+        # Allow small pause so the browser can start playing the video before we block for duration
+        time.sleep(0.1)
+        # Wait for the duration (the user will see the video)
+        time.sleep(SPLASH_DURATION)
+    st.session_state.splash_played = True
+    # remove the overlay
     try:
-        st.session_state["show_splash"] = True
-        # ensure the UI shows the overlay
-        st.experimental_rerun()
+        placeholder_splash.empty()
     except Exception:
         pass
+    # continue (no rerun needed)
 
-    # Sleep outside Streamlit execution to avoid blocking main thread
-    time.sleep(SPLASH_DURATION)
-    try:
-        st.session_state["show_splash"] = False
-        st.session_state["splash_played"] = True
-        st.experimental_rerun()
-    except Exception:
-        pass
-
-# Only start the splash worker once
-if not st.session_state.get("splash_played", False) and not st.session_state.get("show_splash", False):
-    # start splash thread
-    try:
-        threading.Thread(target=_splash_worker, daemon=True).start()
-        # Immediately render overlay on this run if base64 exists
-    except Exception:
-        pass
-
-# Show overlay HTML if requested by session state
-if st.session_state.get("show_splash", False):
-    # render splash overlay
-    html = embed_video_overlay_html(splash_base64, loop=False, overlay_id="splash-overlay")
-    if html:
-        st.markdown(html, unsafe_allow_html=True)
-    # short-circuit: keep the rest of the UI under the overlay; we still let code continue to define session state etc.
-elif st.session_state.get("show_loading", False):
-    # render loading overlay
-    html = embed_video_overlay_html(loading_base64, loop=True, overlay_id="loading-overlay")
-    if html:
-        st.markdown(html, unsafe_allow_html=True)
-
-# ---------- PAGE CONTENT ----------
 st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-# ---------- HOME PAGE ----------
+# ------------------------- Page: HOME -------------------------
 if st.session_state["nav"] == "HOME":
-    st.markdown(
-    """
-    <h1  font-size: 42px; color: WHITE; font-weight: 700;'>
-        Welcome to IVROT
-    </h1>
-    """,
-    unsafe_allow_html=True
-)
-    st.markdown(
-    """
+    st.markdown("<h1 style='font-size:42px; font-weight:700;'>Welcome to IVROT</h1>", unsafe_allow_html=True)
+    st.markdown("""
     <div style="font-size:20px; font-weight:700; line-height:1.5;">
         <b>IVROT (Integrated Vessel Route Optimisation Toolkit)</b> helps maritime professionals plan and optimize vessel routes efficiently, reducing fuel use and enhancing safety.
         <br><br>
@@ -657,31 +367,16 @@ if st.session_state["nav"] == "HOME":
         - Customizable ship profiles (speed, ETD, type).<br>
         - Voyage history tracking.<br>
         - Feedback system for improving user experience.<br><br>
-        Your go-to tool for smarter and safer maritime navigation.
     </div>
-    """,
-    unsafe_allow_html=True
-)
+    """, unsafe_allow_html=True)
+    st.markdown("<div style='height:300px'></div>", unsafe_allow_html=True)
 
-    st.markdown("<div style='height:400px'></div>", unsafe_allow_html=True)
-
-
-# ----------------- NEW TRAJECTORY PAGE (with background generation) -----------------
+# ------------------------- Page: NEW TRAJECTORY -------------------------
 elif st.session_state["nav"] == "NEW TRAJECTORY":
     st.header("New Trajectory")
 
-    # --- Trajectory session state ---
-    if "start" not in st.session_state:
-        st.session_state.start = [None, None]
-    if "end" not in st.session_state:
-        st.session_state.end = [None, None]
-    if "route" not in st.session_state:
-        st.session_state.route = None
-    if "clusters" not in st.session_state:
-        st.session_state.clusters = []
-
+    # land shapefile (optional)
     if "land" not in st.session_state:
-        # geopandas read may be slow; keep in session
         try:
             st.session_state.land = gpd.read_file(r"ne_10m_land.shp")
         except Exception:
@@ -693,7 +388,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         point = Point(lon, lat)
         return not st.session_state.land.contains(point).any()
 
-    # --- Sidebar for NEW TRAJECTORY ---
     with st.sidebar.expander("Route Points & Ship"):
         start_lat = st.number_input("Start Latitude", value=st.session_state.start[0] or 0.0)
         start_lon = st.number_input("Start Longitude", value=st.session_state.start[1] or 0.0)
@@ -704,7 +398,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         wind = st.slider("WIND", 0, 100, 50)
         current = st.slider("CURRENT", 0, 100, 50)
 
-        # ship type selectbox populated from ship_data.csv
         ship_names = list(st.session_state.get("ship_df", res_df)["ShipType"].astype(str).tolist())
         if not ship_names:
             ship_names = ["Unknown"]
@@ -715,8 +408,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         reset = st.button("Reset Trajectory")
         generate = st.button("Generate Route")
 
-        # ---- SYNC manual sidebar coords into session_state so Generate works even without map clicks ----
-        # (minimal and safe: only set if user provided non-zero values)
         if (start_lat != 0.0 or start_lon != 0.0):
             st.session_state.start = [start_lat, start_lon]
         if (end_lat != 0.0 or end_lon != 0.0):
@@ -743,7 +434,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         if st.session_state.end != [None, None]:
             folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m)
         map_click = st_folium(m, width="100%", height=600, key="click_map")
-
     if map_click and map_click.get("last_clicked"):
         lat = map_click["last_clicked"]["lat"]
         lon = map_click["last_clicked"]["lng"]
@@ -752,17 +442,19 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         elif st.session_state.end == [None, None] and is_water(lat, lon):
             st.session_state.end = [lat, lon]
 
-    # ----------------- Background route generation worker -----------------
-    def generate_route_worker(start_coords, end_coords, ship_speed_knots_local, ship_type_local, wave_local, wind_local, current_local, start_date_local):
-        """This runs in a thread to generate the route and clusters and save to CSV — updates session_state at end."""
-        try:
-            # Defensive checks
-            if not start_coords or not end_coords or start_coords == [None, None] or end_coords == [None, None]:
-                st.session_state["route_generated"] = False
-                st.session_state["show_loading"] = False
-                st.experimental_rerun()
-                return
+    # ----------------- Synchronous route generation with overlay -----------------
+    def generate_route_sync(start_coords, end_coords, ship_speed_knots_local, ship_type_local, wave_local, wind_local, current_local, start_date_local):
+        """Runs synchronously in the same Streamlit run while overlay is shown."""
+        # Show overlay placeholder
+        overlay_placeholder = st.empty()
+        html = overlay_video_html(loading_b64, loop=True, overlay_id="loading")
+        if html:
+            overlay_placeholder.markdown(html, unsafe_allow_html=True)
+            # short pause to allow browser to start loading/playing
+            time.sleep(0.15)
 
+        try:
+            # compute route (heavy work can go here)
             num_waypoints = 5
             lats = [start_coords[0]]
             lons = [start_coords[1]]
@@ -785,7 +477,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             lons.append(end_coords[1])
             route = list(zip(lats,lons))
 
-            # Generate clusters
+            # Generate clusters (may take time)
             clusters=[]
             for i in range(len(route)-1):
                 lat1,lon1 = route[i]
@@ -826,7 +518,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                             "current":random.randint(50,100)
                         })
 
-            # compute voyage metrics for CSV
+            # compute voyage metrics
             def haversine(lat1, lon1, lat2, lon2):
                 R=6371.0
                 phi1,phi2=math.radians(lat1),math.radians(lat2)
@@ -835,7 +527,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                 a=math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
                 c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
                 return R*c
-
             total_distance_km=0
             for i in range(len(route)-1):
                 lat1,lon1=route[i]
@@ -846,7 +537,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             etd=datetime.combine(start_date_local,datetime.min.time())
             eta=etd+timedelta(hours=hours_needed)
 
-            # Prepare voyage dict and append to CSV (defaults used immediately if user doesn't submit feedback)
             ts = datetime.now().isoformat()
             voyage_row = {
                 "TIMESTAMP": ts,
@@ -876,7 +566,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                 saved_ok = False
                 print("Failed saving voyage:", e)
 
-            # Update session state (must be done in the main thread context, but it's generally ok to set here and then rerun)
+            # Update session state (done after heavy compute)
             st.session_state.route = route
             st.session_state.clusters = clusters
             st.session_state["route_generated"] = True
@@ -885,47 +575,35 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             st.session_state["voyage_timestamp"] = ts
 
         except Exception as e:
-            # record exception and fail gracefully
-            st.session_state["route_generated"] = False
             st.error(f"Route generation failed: {e}")
             traceback.print_exc()
+
         finally:
-            # hide loading overlay and trigger rerun to show results
-            st.session_state["show_loading"] = False
-            st.session_state["task_done"] = True
+            # hide overlay
             try:
-                st.experimental_rerun()
+                overlay_placeholder.empty()
             except Exception:
                 pass
 
-    # If user clicks Generate, start the background thread and show overlay
+    # If user clicked the generate button, run the synchronous generator with overlay
     if generate:
-        # Ensure coords exist before starting thread
         if st.session_state.start == [None, None] or st.session_state.end == [None, None]:
-            st.warning("Please provide valid start and end coordinates before generating a route.")
+            st.warning("Please set start and end coordinates (via map click or the sidebar) before generating.")
         else:
-            # set overlay flag and start background thread
-            st.session_state["show_loading"] = True
-            st.session_state["task_done"] = False
-            # capture current parameters to pass into thread function
-            start_coords_capture = st.session_state.start.copy()
-            end_coords_capture = st.session_state.end.copy()
-            ship_speed_capture = ship_speed_knots
-            ship_type_capture = ship_type
-            wave_capture = wave
-            wind_capture = wind
-            current_capture = current
-            start_date_capture = start_date
+            # Run heavy function synchronously while overlay is present
+            generate_route_sync(
+                start_coords=st.session_state.start.copy(),
+                end_coords=st.session_state.end.copy(),
+                ship_speed_knots_local=ship_speed_knots,
+                ship_type_local=ship_type,
+                wave_local=wave,
+                wind_local=wind,
+                current_local=current,
+                start_date_local=start_date
+            )
+            # After the synchronous function completes, page continues to render normally
 
-            threading.Thread(
-                target=generate_route_worker,
-                args=(start_coords_capture, end_coords_capture, ship_speed_capture, ship_type_capture, wave_capture, wind_capture, current_capture, start_date_capture),
-                daemon=True
-            ).start()
-            # immediately rerun so overlay shows
-            st.experimental_rerun()
-
-    # --- Final Map with route & clusters ---
+    # --- Show final map with route & clusters (if available) ---
     map_container2 = st.container()
     with map_container2:
         m2 = folium.Map(location=[20.5937,78.9629], zoom_start=5, tiles="CartoDB positron")
@@ -944,7 +622,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                                     tooltip=tooltip_text).add_to(m2)
         st_folium(m2, width="100%", height=600, key="final_map")
 
-    # --- BUTTONS: Show Resistance Curve & Feedback (appears only after generation) ---
+    # --- Buttons for resistance & feedback (post generate) ---
     if st.session_state.get("route_generated", False):
         col_a, col_b = st.columns([1,1])
         with col_a:
@@ -954,18 +632,14 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             if st.button("Feedback", key="feedback_btn"):
                 st.session_state["open_feedback"] = True
 
-    # If user asked to show resistance curve, compute & display it
+    # Resistance plot
     if st.session_state.get("show_res", False):
-        # try to find matching ship row by ship_type value
         try:
             ship_df_local = st.session_state.get("ship_df", res_df)
-            # match ignoring case and whitespace
             mask = ship_df_local['ShipType'].astype(str).str.strip().str.upper() == str(ship_type).strip().upper()
-            ship_row = None
             if mask.any():
                 ship_row = ship_df_local[mask].iloc[0]
             else:
-                # fallback: try match by contains or first row
                 contains_mask = ship_df_local['ShipType'].astype(str).str.strip().str.upper().str.contains(str(ship_type).strip().upper())
                 if contains_mask.any():
                     ship_row = ship_df_local[contains_mask].iloc[0]
@@ -974,9 +648,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
 
             speeds_knots = np.linspace(0.1, 25, 100)
             speeds_ms = speeds_knots * 0.514444
-
             total_resistance = []
-            # choose model based on LWL / LPP availability
             LWL_val = ship_row.get('LWL', ship_row.get('LPP', 0))
             try:
                 LWL_num = float(LWL_val)
@@ -1002,7 +674,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                     )
                     total_resistance.append(res['Rt'])
 
-            # Plot and display in Streamlit (inline)
             fig, ax = plt.subplots(figsize=(12, 6))
             ax.plot(speeds_knots, np.array(total_resistance) / 1000, marker='o', linestyle='-', markersize=4)
             ax.set_title(f"Total resistance vs speed for {int(LWL_num) if LWL_num else 'N/A'} m {ship_row.get('ShipType','')}")
@@ -1013,15 +684,13 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             st.subheader("Resistance plot for selected ship")
             st.pyplot(fig)
             plt.close(fig)
-
         except Exception as e:
             st.warning(f"Could not generate resistance plot: {e}")
 
-    # --- Feedback expander handling (non-transparent) ---
+    # Feedback expander
     if st.session_state.get("open_feedback", False):
-        # Use expander (non-transparent) for feedback UI
         with st.expander("Voyage Feedback", expanded=True):
-            st.write("Please provide your feedback for this voyage. If you close without submitting, the default rating/text will remain.")
+            st.write("Please provide your feedback for this voyage.")
             with st.form("feedback_form"):
                 rating = st.slider("Rating (1-5)", min_value=1, max_value=5, value=st.session_state.get('feedback_rating',3))
                 text = st.text_area("Feedback text", value=st.session_state.get('feedback_text', "Average: Routine voyage with some manageable issues."), height=150)
@@ -1029,16 +698,14 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                 if submitted:
                     st.session_state['feedback_rating'] = int(rating)
                     st.session_state['feedback_text'] = text.strip() if text.strip() else "Average: Routine voyage with some manageable issues."
-                    # update CSV entry for this voyage timestamp
                     if st.session_state.get('voyage_timestamp'):
                         success = update_feedback_in_csv(CSV_PATH, st.session_state['voyage_timestamp'], st.session_state['feedback_rating'], st.session_state['feedback_text'])
                         if success:
                             st.success("Thank you — your feedback has been saved.")
                     st.session_state['open_feedback'] = False
 
-    # --- Distance & ETA display in sidebar ---
+    # Sidebar voyage info
     if st.session_state.route:
-        # recompute distances (as above)
         def haversine(lat1, lon1, lat2, lon2):
             R=6371.0
             phi1,phi2=math.radians(lat1),math.radians(lat2)
@@ -1053,7 +720,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             lat2,lon2=st.session_state.route[i+1]
             total_distance_km+=haversine(lat1,lon1,lat2,lon2)
         total_distance_nm=total_distance_km/1.852
-        hours_needed=total_distance_nm/ship_speed_knots
+        hours_needed=total_distance_nm/ship_speed_knots if ship_speed_knots else 0
         etd=datetime.combine(start_date,datetime.min.time())
         eta=etd+timedelta(hours=hours_needed)
         st.sidebar.markdown("### Voyage Info")
@@ -1063,20 +730,16 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.sidebar.write(f"**ETA:** {eta.strftime('%Y-%m-%d %H:%M')}")
         st.sidebar.write(f"**Duration:** {hours_needed:.1f} hrs")
 
-# ---------- SHIP DATA PAGE ----------
+# ------------------------- Page: SHIP DATA -------------------------
 elif st.session_state["nav"] == "SHIP DATA":
     st.header("Ship Data")
-    # ensure ship CSV exists
     ensure_csv_exists(SHIP_CSV, SHIP_FIELDS)
-    # refresh session dataframe from disk
     try:
         df_ships = pd.read_csv(SHIP_CSV)
         st.session_state["ship_df"] = df_ships.copy()
     except Exception:
         df_ships = st.session_state.get("ship_df", res_df)
-
     st.dataframe(df_ships, use_container_width=True)
-
     st.markdown("---")
     col1, col2, col3 = st.columns([1,1,1])
     with col1:
@@ -1088,9 +751,7 @@ elif st.session_state["nav"] == "SHIP DATA":
     with col3:
         if st.button("Delete Ship"):
             st.session_state["ship_editor_state"] = {"mode": "delete"}
-
     mode = st.session_state.get("ship_editor_state", {}).get("mode")
-
     if mode == "add":
         st.subheader("Add new ship row")
         with st.form("add_ship_form"):
@@ -1108,7 +769,6 @@ elif st.session_state["nav"] == "SHIP DATA":
                         st.session_state["ship_editor_state"] = {"mode": None}
                 except Exception as e:
                     st.error(f"Failed to add ship: {e}")
-
     elif mode == "edit":
         st.subheader("Edit existing ship row")
         ship_list = st.session_state.get("ship_df", res_df)["ShipType"].astype(str).tolist()
@@ -1135,7 +795,6 @@ elif st.session_state["nav"] == "SHIP DATA":
                                 st.session_state["ship_editor_state"] = {"mode": None}
                         except Exception as e:
                             st.error(f"Failed to edit ship: {e}")
-
     elif mode == "delete":
         st.subheader("Delete ship row")
         ship_list = st.session_state.get("ship_df", res_df)["ShipType"].astype(str).tolist()
@@ -1152,7 +811,7 @@ elif st.session_state["nav"] == "SHIP DATA":
                 except Exception as e:
                     st.error(f"Failed to delete ship: {e}")
 
-# ---------- HISTORY PAGE ----------
+# ------------------------- Page: HISTORY -------------------------
 elif st.session_state["nav"] == "HISTORY":
     st.header("Voyage History")
     try:
