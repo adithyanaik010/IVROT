@@ -31,7 +31,8 @@ SPLASH_DURATION = 11 # adjust to actual video length (seconds)
 if not st.session_state.splash_played:
     # show splash overlay synchronously (the browser will render and play while we wait)
     placeholder_splash = st.empty()
-    if splash_b64: placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False,overlay_id="splash"), unsafe_allow_html=True)
+    if splash_b64:
+ placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False,overlay_id="splash"), unsafe_allow_html=True)
         # Allow small pause so the browser can start playing the video before we block for duration
         time.sleep(0.1)
         # Wait for the duration (the user will see the video)
