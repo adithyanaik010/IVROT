@@ -36,7 +36,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---- FILE PATHS ----
-splash_video = "1761651966208.mp4"  # first video
+splash_video = "YouCut_20251028_153909796.mp4"  # first video
 loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # second video
 
 
