@@ -22,7 +22,30 @@ import os
 import csv
 import time
 import traceback
+# ------------------------- Splash handling (synchronous) -------------------------
+splash_b64 = get_base64(SPLASH_VIDEO_FILE)
+loading_b64 = get_base64(LOADING_VIDEO_FILE)
 
+SPLASH_DURATION = 11 # adjust to actual video length (seconds)
+
+if not st.session_state.splash_played:
+    # show splash overlay synchronously (the browser will render and play while we wait)
+    placeholder_splash = st.empty()
+    if splash_b64:
+placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False, overlay_id="splash"), unsafe_allow_html=True)
+        # Allow small pause so the browser can start playing the video before we block for duration
+        time.sleep(0.1)
+        # Wait for the duration (the user will see the video)
+        time.sleep(SPLASH_DURATION)
+    st.session_state.splash_played = True
+    # remove the overlay
+    try:
+        placeholder_splash.empty()
+    except Exception:
+        pass
+    # continue (no rerun needed)
+
+       
 # ------------------------- Configuration & helpers -------------------------
 st.set_page_config(page_title="IVROT", layout="wide", page_icon="🎥")
 
@@ -329,29 +352,7 @@ btns.forEach(b => {{
 </script>
 """, unsafe_allow_html=True)
 
-# ------------------------- Splash handling (synchronous) -------------------------
-splash_b64 = get_base64(SPLASH_VIDEO_FILE)
-loading_b64 = get_base64(LOADING_VIDEO_FILE)
-
-SPLASH_DURATION = 11 # adjust to actual video length (seconds)
-
-if not st.session_state.splash_played:
-    # show splash overlay synchronously (the browser will render and play while we wait)
-    placeholder_splash = st.empty()
-    if splash_b64:
-        placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False, overlay_id="splash"), unsafe_allow_html=True)
-        # Allow small pause so the browser can start playing the video before we block for duration
-        time.sleep(0.1)
-        # Wait for the duration (the user will see the video)
-        time.sleep(SPLASH_DURATION)
-    st.session_state.splash_played = True
-    # remove the overlay
-    try:
-        placeholder_splash.empty()
-    except Exception:
-        pass
-    # continue (no rerun needed)
-
+ 
 st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
 # ------------------------- Page: HOME -------------------------
