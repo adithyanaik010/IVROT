@@ -1,14 +1,15 @@
 import streamlit as st
+import base64
 import time
 
-# Page config
+# ---- PAGE CONFIG ----
 st.set_page_config(
     page_title="App with Controlled Videos",
     layout="wide",
     page_icon="🎥",
 )
 
-# White background and centered layout
+# ---- STYLES ----
 st.markdown("""
     <style>
         body, .stApp {
@@ -34,37 +35,45 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# File paths
-splash_video = "1761651966208.mp4"  # first video (startup)
-loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # second video (while processing)
+# ---- FILE PATHS ----
+splash_video = "1761651966208.mp4"  # first video
+loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # second video
 
 
-def play_video(file, loop=False):
-    """Embed a video that auto-plays and cannot be controlled by the user."""
+def embed_video(file_path, loop=False):
+    """Reads a video file and embeds it as a base64 HTML video with no controls."""
+    with open(file_path, "rb") as f:
+        video_bytes = f.read()
+    base64_video = base64.b64encode(video_bytes).decode("utf-8")
     loop_attr = "loop" if loop else ""
     video_html = f"""
         <video autoplay {loop_attr} muted playsinline>
-            <source src="{file}" type="video/mp4">
+            <source src="data:video/mp4;base64,{base64_video}" type="video/mp4">
         </video>
     """
     st.markdown(video_html, unsafe_allow_html=True)
 
 
-# --- SPLASH SCREEN (plays once on app start) ---
+# ---- APP LOGIC ----
+
+# Splash screen (only once per session)
 if "splash_played" not in st.session_state:
     st.session_state.splash_played = True
-    play_video(splash_video, loop=False)
-    time.sleep(3)  # wait for splash duration (adjust as per your video length)
+    embed_video(splash_video, loop=False)
+    time.sleep(3)  # Adjust based on video duration
     st.rerun()
 
-# --- MAIN APP UI ---
+# Main app interface
 st.title("🚀 My Streamlit App")
 
 if st.button("Run Task"):
-    # Show looping video while task is running
-    play_video(loading_video, loop=True)
+    # Play looping loading video while processing
+    embed_video(loading_video, loop=True)
+
     with st.spinner("Processing..."):
-        time.sleep(5)  # simulate work
+        time.sleep(5)  # Simulated task
+
     st.success("✅ Task Complete!")
+
 else:
     st.info("Click the button above to start a task.")
