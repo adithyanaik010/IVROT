@@ -333,7 +333,7 @@ btns.forEach(b => {{
 splash_b64 = get_base64(SPLASH_VIDEO_FILE)
 loading_b64 = get_base64(LOADING_VIDEO_FILE)
 
-SPLASH_DURATION = 6.5  # adjust to actual video length (seconds)
+SPLASH_DURATION = 11 # adjust to actual video length (seconds)
 
 if not st.session_state.splash_played:
     # show splash overlay synchronously (the browser will render and play while we wait)
