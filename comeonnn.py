@@ -1,4 +1,4 @@
-# comeonnn_fixed_final.py
+# comeonnn_full_theming_with_shipdata.py
 import streamlit as st
 from pathlib import Path
 import base64
@@ -52,6 +52,7 @@ LOGO_LIGHT_JPG = LOGO_LIGHT_PNG.with_suffix(".jpg")
 LOGO_DARK_JPG = LOGO_DARK_PNG.with_suffix(".jpg")
 ICO_PATH = Path(r"IVROT.ico")
 CSV_PATH = r"voyages.csv"
+SHIP_CSV = r"ship_data.csv"
 
 # ---------- Helpers ----------
 def file_to_data_uri(path: Path):
@@ -95,6 +96,7 @@ def resistance_van(LWL, B, T, V, rho, nu, nabla, S, Cp, k2_factor):
     Rt = Rf + Rr
     return {'Rt': Rt, 'Rf': Rf, 'Rr': Rr}
 
+# default embedded ship CSV (used if ship_data.csv missing)
 csv_data = """ShipType,v,rho,nu,LWL,LPP,Ld,B,T,nabla,S,Cp,Cm,lcb,iE,dCF,CB,CWP,ABT,hB,AT,Cstern,Sapp,k2_factor
 Cargo Ship,15,1025,1.19E-06,140,135,N/A,22,8.5,12000,3400,0.68,0.99,-1.5,22,0.0005,0.67,0.78,30,4.5,25,80,30,0.3
 Tanker,14,1025,1.19E-06,240,230,N/A,42,15.5,85000,14500,0.81,0.995,0.5,18,0.0005,0.8,0.88,80,8,70,120,80,0.3
@@ -102,11 +104,25 @@ Container,22,1025,1.19E-06,280,270,N/A,32.2,13.5,65000,12100,0.65,0.985,1.2,12,0
 Passenger,20,1025,1.19E-06,210,200,N/A,28,8,30000,6800,0.7,0.99,0.8,15,0.0005,0.69,0.79,20,6,55,70,50,0.25
 Fishing Vessel,12,1025,1.19E-06,45,42,43.5,9.5,4.5,750,550,0.62,0.9,-3.5,30,0.0005,0.55,0.85,0,0,0,5,0,0.05
 """
-res_df = pd.read_csv(StringIO(csv_data))
-print(res_df)
-# ----------------------------- end resistance utilities -----------------------------
 
-# ---------- CSV helpers for voyages ----------
+# load ship data CSV if available, else fallback to embedded
+if os.path.exists(SHIP_CSV):
+    try:
+        res_df = pd.read_csv(SHIP_CSV)
+    except Exception:
+        res_df = pd.read_csv(StringIO(csv_data))
+        try:
+            res_df.to_csv(SHIP_CSV, index=False)
+        except Exception:
+            pass
+else:
+    res_df = pd.read_csv(StringIO(csv_data))
+    try:
+        res_df.to_csv(SHIP_CSV, index=False)
+    except Exception:
+        pass
+
+# ---------- CSV helpers for voyages & ships ----------
 FIELDNAMES = [
     "TIMESTAMP", "START_LAT", "START_LON", "END_LAT", "END_LON",
     "SHIP_TYPE", "SHIP_SPEED_KNOTS", "ETD", "ETA",
@@ -116,15 +132,20 @@ FIELDNAMES = [
     "FEEDBACK_RATING", "FEEDBACK_TEXT"
 ]
 
-def ensure_csv_exists(path):
+SHIP_FIELDS = list(res_df.columns)
+
+def ensure_csv_exists(path, header_fields=None):
     if not os.path.exists(path):
         # create file with header
         with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=FIELDNAMES, quoting=csv.QUOTE_MINIMAL)
-            writer.writeheader()
+            if header_fields:
+                writer = csv.DictWriter(f, fieldnames=header_fields, quoting=csv.QUOTE_MINIMAL)
+                writer.writeheader()
+            else:
+                f.write("")
 
 def append_voyage_to_csv(path, data):
-    ensure_csv_exists(path)
+    ensure_csv_exists(path, FIELDNAMES)
     # ensure all keys exist
     row = {k: ("" if data.get(k) is None else data.get(k)) for k in FIELDNAMES}
     with open(path, "a", newline="", encoding="utf-8") as f:
@@ -133,7 +154,7 @@ def append_voyage_to_csv(path, data):
 
 def update_feedback_in_csv(path, timestamp, rating, text):
     try:
-        ensure_csv_exists(path)
+        ensure_csv_exists(path, FIELDNAMES)
         # read raw lines
         with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -181,6 +202,15 @@ def update_feedback_in_csv(path, timestamp, rating, text):
         st.error(f"Failed to update feedback in CSV: {e}")
         return False
 
+# helpers for ship CSV
+def save_ship_df(df):
+    try:
+        df.to_csv(SHIP_CSV, index=False)
+        return True
+    except Exception as e:
+        st.error(f"Failed to save ship data: {e}")
+        return False
+
 # ---------- Page config ----------
 page_icon = str(ICO_PATH) if ICO_PATH.exists() else None
 st.set_page_config(page_title="IVROT", layout="wide", page_icon=page_icon)
@@ -206,6 +236,13 @@ if "feedback_text" not in st.session_state:
     st.session_state["feedback_text"] = "Average: Routine voyage with some manageable issues."
 if "open_feedback" not in st.session_state:
     st.session_state["open_feedback"] = False
+
+# keep ship dataframe in session for responsiveness
+if "ship_df" not in st.session_state:
+    st.session_state["ship_df"] = res_df.copy()
+
+if "ship_editor_state" not in st.session_state:
+    st.session_state["ship_editor_state"] = {"mode": None}
 
 def toggle_theme_flag():
     st.session_state["theme_flag"] = 1 if st.session_state["theme_flag"] == 0 else 0
@@ -332,6 +369,50 @@ st.markdown(
       .ivrot-nav-row button { padding:10px 16px; font-size:16px; }
       .ivrot-header { padding:10px 14px; }
     }
+
+    /* Sidebar theming: ensure all form controls and labels match theme variables */
+    div[data-testid="stSidebar"] * {
+      color: var(--ivrot-text) !important;
+    }
+
+    div[data-testid="stSidebar"] input,
+    div[data-testid="stSidebar"] textarea,
+    div[data-testid="stSidebar"] select,
+    div[data-testid="stSidebar"] .stTextInput>div>input,
+    div[data-testid="stSidebar"] .stNumberInput>div>input,
+    div[data-testid="stSidebar"] .stSelectbox>div>div,
+    div[data-testid="stSidebar"] .stSlider>div,
+    div[data-testid="stSidebar"] .stSlider>div label {
+      background: var(--ivrot-bg) !important;
+      color: var(--ivrot-text) !important;
+      border: 1px solid var(--ivrot-text) !important;
+      box-shadow: none !important;
+    }
+
+    /* Make sure dropdown arrow and selected value area also follow theme */
+    div[data-testid="stSidebar"] .stSelectbox select,
+    div[data-testid="stSidebar"] .stSelectbox div[role="listbox"],
+    div[data-testid="stSidebar"] .stSelectbox .st-bg {
+      background: var(--ivrot-bg) !important;
+      color: var(--ivrot-text) !important;
+      border: 1px solid var(--ivrot-text) !important;
+    }
+
+    /* Labels, helper text and slider titles in sidebar */
+    div[data-testid="stSidebar"] label,
+    div[data-testid="stSidebar"] .css-1adrfps,
+    div[data-testid="stSidebar"] .css-1v3fvcr {
+      color: var(--ivrot-text) !important;
+    }
+
+    /* Ensure buttons in sidebar also match theme */
+    div[data-testid="stSidebar"] .stButton > button,
+    div[data-testid="stSidebar"] button {
+      background: var(--ivrot-bg) !important;
+      color: var(--ivrot-text) !important;
+      border: 1px solid var(--ivrot-text) !important;
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -373,13 +454,12 @@ feedback_css = (
     "}\n"
     "div[data-testid=\"stExpander\"] .stButton > button,\n"
     ".stExpander .stButton > button {\n"
-    "  color: var(--ivrot-text) !important;background: var(--ivrot-bg) !important;\n  border-color: white !important;\n"
+    "  color: var(--ivrot-text) !important;background: var(--ivrot-bg) !important;\n  border-color: var(--ivrot-text) !important;\n"
     "}\n"
     "</style>\n"
 )
 
 st.markdown(feedback_css, unsafe_allow_html=True)
-
 
 
 # ---------- Header HTML ----------
@@ -406,7 +486,8 @@ st.markdown(
 # ---------- Header Buttons ----------
 c1, c2, c3 = st.columns([1,4,1])
 with c2:
-    col_nav1, col_nav2, col_nav3 = st.columns([1,1,1])
+    # create 4 nav buttons in the center
+    col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([1,1,1,1])
     with col_nav1:
         if st.button("HOME", key="nav_home"):
             st.session_state["nav"] = "HOME"
@@ -416,6 +497,9 @@ with c2:
     with col_nav3:
         if st.button("HISTORY", key="nav_hist"):
             st.session_state["nav"] = "HISTORY"
+    with col_nav4:
+        if st.button("SHIP DATA", key="nav_shipdata"):
+            st.session_state["nav"] = "SHIP DATA"
 
 with c3:
     icon = "☼" if st.session_state["theme_flag"] == 0 else "☽"
@@ -491,9 +575,15 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.session_state.clusters = []
 
     if "land" not in st.session_state:
-        st.session_state.land = gpd.read_file(r"ne_10m_land.shp")
+        # geopandas read may be slow; keep in session
+        try:
+            st.session_state.land = gpd.read_file(r"ne_10m_land.shp")
+        except Exception:
+            st.session_state.land = gpd.GeoDataFrame()
 
     def is_water(lat, lon):
+        if st.session_state.land.empty:
+            return True
         point = Point(lon, lat)
         return not st.session_state.land.contains(point).any()
 
@@ -508,7 +598,11 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         wind = st.slider("WIND", 0, 100, 50)
         current = st.slider("CURRENT", 0, 100, 50)
 
-        ship_type = st.selectbox("Select Ship Type", ["Cargo Vessel","Oil Tanker","Container Ship","Fishing Vessel","Passenger Ship"])
+        # ship type selectbox populated from ship_data.csv
+        ship_names = list(st.session_state.get("ship_df", res_df)["ShipType"].astype(str).tolist())
+        if not ship_names:
+            ship_names = ["Unknown"]
+        ship_type = st.selectbox("Select Ship Type", ship_names)
         ship_speed_knots = st.slider("Ship Speed (knots)", 5, 30, 15)
         start_date = st.date_input("Select ETD Date", value=date.today())
 
@@ -544,7 +638,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m)
         map_click = st_folium(m, width="100%", height=600, key="click_map")
 
-    if map_click and map_click["last_clicked"]:
+    if map_click and map_click.get("last_clicked"):
         lat = map_click["last_clicked"]["lat"]
         lon = map_click["last_clicked"]["lng"]
         if st.session_state.start == [None, None] and is_water(lat, lon):
@@ -703,38 +797,56 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
 
     # If user asked to show resistance curve, compute & display it
     if st.session_state.get("show_res", False):
-        # map UI names to CSV names
-        name_map = {
-            "Cargo Vessel": "Cargo Ship",
-            "Oil Tanker": "Tanker",
-            "Container Ship": "Container",
-            "Passenger Ship": "Passenger",
-            "Fishing Vessel": "Fishing Vessel"
-        }
-        res_name = name_map.get(ship_type, ship_type)
+        # try to find matching ship row by ship_type value
         try:
-            ship_row = res_df[res_df['ShipType'].str.strip().str.upper() == res_name.strip().upper()].iloc[0]
+            ship_df_local = st.session_state.get("ship_df", res_df)
+            # match ignoring case and whitespace
+            mask = ship_df_local['ShipType'].astype(str).str.strip().str.upper() == str(ship_type).strip().upper()
+            ship_row = None
+            if mask.any():
+                ship_row = ship_df_local[mask].iloc[0]
+            else:
+                # fallback: try match by contains or first row
+                contains_mask = ship_df_local['ShipType'].astype(str).str.strip().str.upper().str.contains(str(ship_type).strip().upper())
+                if contains_mask.any():
+                    ship_row = ship_df_local[contains_mask].iloc[0]
+                else:
+                    ship_row = ship_df_local.iloc[0]
 
             speeds_knots = np.linspace(0.1, 25, 100)
             speeds_ms = speeds_knots * 0.514444
 
             total_resistance = []
-            if ship_row['LWL'] > 100:
+            # choose model based on LWL / LPP availability
+            LWL_val = ship_row.get('LWL', ship_row.get('LPP', 0))
+            try:
+                LWL_num = float(LWL_val)
+            except Exception:
+                LWL_num = 0
+
+            if LWL_num > 100:
                 for v_ms in speeds_ms:
-                    res = resistance_hol(ship_row['LPP'], ship_row['B'], ship_row['T'], v_ms, ship_row['rho'], ship_row['nu'],
-                                         ship_row['CB'], ship_row['S'], ship_row['lcb'], ship_row['CWP'], ship_row['Cp'], ship_row['Cm'],
-                                         ship_row['ABT'], ship_row['hB'], ship_row['AT'], ship_row['Cstern'], ship_row['iE'], ship_row['dCF'])
+                    res = resistance_hol(
+                        float(ship_row.get('LPP', 0) or 0), float(ship_row.get('B', 0) or 0), float(ship_row.get('T', 0) or 0),
+                        v_ms, float(ship_row.get('rho', 1025) or 1025), float(ship_row.get('nu', 1.19e-6) or 1.19e-6),
+                        float(ship_row.get('CB', 0) or 0), float(ship_row.get('S', 0) or 0), float(ship_row.get('lcb', 0) or 0),
+                        ship_row.get('CWP', 0), ship_row.get('Cp', 0), ship_row.get('Cm', 0), ship_row.get('ABT', 0), ship_row.get('hB', 0),
+                        ship_row.get('AT', 0), ship_row.get('Cstern', 0), ship_row.get('iE', 0), ship_row.get('dCF', 0)
+                    )
                     total_resistance.append(res['Rt'])
             else:
                 for v_ms in speeds_ms:
-                    res = resistance_van(ship_row['LWL'], ship_row['B'], ship_row['T'], v_ms, ship_row['rho'], ship_row['nu'],
-                                         ship_row['nabla'], ship_row['S'], ship_row['Cp'], ship_row['k2_factor'])
+                    res = resistance_van(
+                        float(ship_row.get('LWL', 0) or 0), float(ship_row.get('B', 0) or 0), float(ship_row.get('T', 0) or 0),
+                        v_ms, float(ship_row.get('rho', 1025) or 1025), float(ship_row.get('nu', 1.19e-6) or 1.19e-6),
+                        float(ship_row.get('nabla', 0) or 0), float(ship_row.get('S', 0) or 0), float(ship_row.get('Cp', 0) or 0), float(ship_row.get('k2_factor', 0) or 0)
+                    )
                     total_resistance.append(res['Rt'])
 
             # Plot and display in Streamlit (inline)
-            fig, ax = plt.subplots(figsize=(20, 10))
+            fig, ax = plt.subplots(figsize=(12, 6))
             ax.plot(speeds_knots, np.array(total_resistance) / 1000, marker='o', linestyle='-', markersize=4)
-            ax.set_title(f"Total resistance vs speed for {int(ship_row['LWL'])} m {res_name}")
+            ax.set_title(f"Total resistance vs speed for {int(LWL_num) if LWL_num else 'N/A'} m {ship_row.get('ShipType','')}")
             ax.set_xlabel('Speed (kn)')
             ax.set_ylabel('Total resistance (kN)')
             ax.grid(True, which='major', linestyle='--', linewidth=0.5)
@@ -792,19 +904,103 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.sidebar.write(f"**ETA:** {eta.strftime('%Y-%m-%d %H:%M')}")
         st.sidebar.write(f"**Duration:** {hours_needed:.1f} hrs")
 
+# ---------- SHIP DATA PAGE ----------
+elif st.session_state["nav"] == "SHIP DATA":
+    st.header("Ship Data")
+    # ensure ship CSV exists
+    ensure_csv_exists(SHIP_CSV, SHIP_FIELDS)
+    # refresh session dataframe from disk
+    try:
+        df_ships = pd.read_csv(SHIP_CSV)
+        st.session_state["ship_df"] = df_ships.copy()
+    except Exception:
+        df_ships = st.session_state.get("ship_df", res_df)
+
+    st.dataframe(df_ships, use_container_width=True)
+
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1,1,1])
+    with col1:
+        if st.button("Add Ship"):
+            st.session_state["ship_editor_state"] = {"mode": "add"}
+    with col2:
+        if st.button("Edit Ship"):
+            st.session_state["ship_editor_state"] = {"mode": "edit"}
+    with col3:
+        if st.button("Delete Ship"):
+            st.session_state["ship_editor_state"] = {"mode": "delete"}
+
+    mode = st.session_state.get("ship_editor_state", {}).get("mode")
+
+    if mode == "add":
+        st.subheader("Add new ship row")
+        with st.form("add_ship_form"):
+            new_vals = {}
+            for col in SHIP_FIELDS:
+                new_vals[col] = st.text_input(col, value="")
+            submitted = st.form_submit_button("Save new ship")
+            if submitted:
+                try:
+                    df_new = st.session_state.get("ship_df", res_df).copy()
+                    df_new = df_new.append(new_vals, ignore_index=True)
+                    if save_ship_df(df_new):
+                        st.success("New ship saved to ship_data.csv")
+                        st.session_state["ship_df"] = df_new
+                        st.session_state["ship_editor_state"] = {"mode": None}
+                except Exception as e:
+                    st.error(f"Failed to add ship: {e}")
+
+    elif mode == "edit":
+        st.subheader("Edit existing ship row")
+        ship_list = st.session_state.get("ship_df", res_df)["ShipType"].astype(str).tolist()
+        selected = st.selectbox("Select ship to edit", ship_list)
+        if selected:
+            row = st.session_state.get("ship_df", res_df)
+            row_idx = row[row["ShipType"].astype(str) == str(selected)].index
+            if not row_idx.empty:
+                i = int(row_idx[0])
+                current = row.loc[i].to_dict()
+                with st.form("edit_ship_form"):
+                    edited = {}
+                    for col in SHIP_FIELDS:
+                        edited[col] = st.text_input(col, value=str(current.get(col, "")))
+                    submitted2 = st.form_submit_button("Save changes")
+                    if submitted2:
+                        try:
+                            df_edit = st.session_state.get("ship_df", res_df).copy()
+                            for col in SHIP_FIELDS:
+                                df_edit.at[i, col] = edited[col]
+                            if save_ship_df(df_edit):
+                                st.success("Ship data updated")
+                                st.session_state["ship_df"] = df_edit
+                                st.session_state["ship_editor_state"] = {"mode": None}
+                        except Exception as e:
+                            st.error(f"Failed to edit ship: {e}")
+
+    elif mode == "delete":
+        st.subheader("Delete ship row")
+        ship_list = st.session_state.get("ship_df", res_df)["ShipType"].astype(str).tolist()
+        selected_del = st.selectbox("Select ship to delete", ship_list)
+        if selected_del:
+            if st.button("Confirm delete"):
+                try:
+                    df_del = st.session_state.get("ship_df", res_df).copy()
+                    df_del = df_del[df_del["ShipType"].astype(str) != str(selected_del)]
+                    if save_ship_df(df_del):
+                        st.success("Ship deleted")
+                        st.session_state["ship_df"] = df_del
+                        st.session_state["ship_editor_state"] = {"mode": None}
+                except Exception as e:
+                    st.error(f"Failed to delete ship: {e}")
+
 # ---------- HISTORY PAGE ----------
 elif st.session_state["nav"] == "HISTORY":
     st.header("Voyage History")
     try:
-        ensure_csv_exists(CSV_PATH)
+        ensure_csv_exists(CSV_PATH, FIELDNAMES)
         df = pd.read_csv(CSV_PATH)
         st.dataframe(df,use_container_width=True)
     except Exception as e:
         st.error(f"Error loading CSV: {e}")
 
-
-
-
-
-
-
+# End of file
