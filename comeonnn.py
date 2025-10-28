@@ -1,74 +1,70 @@
 import streamlit as st
 import time
 
-# Set up page layout
+# Page config
 st.set_page_config(
-    page_title="App with Video Loading Screens",
+    page_title="App with Controlled Videos",
     layout="wide",
-    page_icon="🎬",
+    page_icon="🎥",
 )
 
-# Inject CSS to center everything and make background white
+# White background and centered layout
 st.markdown("""
     <style>
-        body {
+        body, .stApp {
             background-color: white;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
         }
         .block-container {
-            padding-top: 0;
-            padding-bottom: 0;
+            padding: 0;
+            margin: 0;
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
         video {
-            border-radius: 10px;
-            max-width: 100vw;
+            width: 100vw;
             height: 100vh;
             object-fit: contain;
-        }
-        .stApp {
             background-color: white;
         }
     </style>
 """, unsafe_allow_html=True)
 
-# Define file paths
-intro_video = "1761651966208.mp4"  # plays once at app start
-loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # loops while processing
+# File paths
+splash_video = "1761651966208.mp4"  # first video (startup)
+loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # second video (while processing)
 
-# --- Show splash/loading screen on app startup ---
+
+def play_video(file, loop=False):
+    """Embed a video that auto-plays and cannot be controlled by the user."""
+    loop_attr = "loop" if loop else ""
+    video_html = f"""
+        <video autoplay {loop_attr} muted playsinline>
+            <source src="{file}" type="video/mp4">
+        </video>
+    """
+    st.markdown(video_html, unsafe_allow_html=True)
+
+
+# --- SPLASH SCREEN (plays once on app start) ---
 if "splash_played" not in st.session_state:
     st.session_state.splash_played = True
-
-    # Display first loading video (splash)
-    video_bytes = open(intro_video, 'rb').read()
-    st.video(video_bytes)
-
-    # Wait for the splash video to finish (you can adjust the time)
-    time.sleep(3)  # Adjust this duration to match your video length
-
+    play_video(splash_video, loop=False)
+    time.sleep(3)  # wait for splash duration (adjust as per your video length)
     st.rerun()
 
-# --- Main App Interface ---
+# --- MAIN APP UI ---
 st.title("🚀 My Streamlit App")
 
-task = st.button("Run Task")
-
-if task:
+if st.button("Run Task"):
+    # Show looping video while task is running
+    play_video(loading_video, loop=True)
     with st.spinner("Processing..."):
-        st.markdown("<h3 style='text-align:center;'>Processing, please wait...</h3>", unsafe_allow_html=True)
-
-        # Display looping video while working
-        video_file = open(loading_video, 'rb')
-        video_bytes = video_file.read()
-
-        st.video(video_bytes, start_time=0)
-
-        # Simulate a long-running task
-        time.sleep(6)
-
-        st.success("✅ Task complete!")
+        time.sleep(5)  # simulate work
+    st.success("✅ Task Complete!")
 else:
     st.info("Click the button above to start a task.")
