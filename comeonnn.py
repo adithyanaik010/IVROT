@@ -342,8 +342,8 @@ st.markdown(set_dark_script, unsafe_allow_html=True)
 # --- Feedback box solid background (white in light theme, dark in dark theme) ---
 # Build CSS via concatenation so literal braces don't get parsed by Python format/f-strings.
 if st.session_state.get('theme_flag', 0) == 0:
-    fb_bg = "#0b1220"
-    fb_text = "#f8fafc"
+    fb_bg = "#ffffff"
+    fb_text = "#0f1724"
 else:
     fb_bg = "#0b1220"
     fb_text = "#f8fafc"
@@ -801,6 +801,7 @@ elif st.session_state["nav"] == "HISTORY":
         st.dataframe(df,use_container_width=True)
     except Exception as e:
         st.error(f"Error loading CSV: {e}")
+
 
 
 
