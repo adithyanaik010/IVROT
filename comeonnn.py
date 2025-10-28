@@ -60,7 +60,7 @@ def embed_video(file_path, loop=False):
 if "splash_played" not in st.session_state:
     st.session_state.splash_played = True
     embed_video(splash_video, loop=False)
-    time.sleep(3)  # Adjust based on video duration
+    time.sleep(10) # Adjust based on video duration
     st.rerun()
 
 # Main app interface
