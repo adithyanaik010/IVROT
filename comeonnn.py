@@ -45,13 +45,13 @@ st.markdown(
 # ------------------ YOUR APP ------------------
 
 # ---------- Paths (update if needed) ----------
-BG_IMAGE = r"C:\Users\P ADITHYA M NAIK\Desktop\IVROT\Navigation_2.jpg"
-LOGO_LIGHT_PNG = Path(r"C:\Users\P ADITHYA M NAIK\Desktop\IVROT\IVROT-removebg-preview.png")
-LOGO_DARK_PNG = Path(r"C:\Users\P ADITHYA M NAIK\Desktop\IVROT\DARK-removebg-preview.png")
+BG_IMAGE = r"Navigation_2.jpg"
+LOGO_LIGHT_PNG = Path(r"IVROT-removebg-preview.png")
+LOGO_DARK_PNG = Path(r"DARK-removebg-preview.png")
 LOGO_LIGHT_JPG = LOGO_LIGHT_PNG.with_suffix(".jpg")
 LOGO_DARK_JPG = LOGO_DARK_PNG.with_suffix(".jpg")
-ICO_PATH = Path(r"C:\Users\P ADITHYA M NAIK\Desktop\IVROT\IVROT.ico")
-CSV_PATH = r"C:\Users\P ADITHYA M NAIK\Desktop\IVROT\voyages.csv"
+ICO_PATH = Path(r"IVROT.ico")
+CSV_PATH = r"voyages.csv"
 
 # ---------- Helpers ----------
 def file_to_data_uri(path: Path):
@@ -487,7 +487,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.session_state.clusters = []
 
     if "land" not in st.session_state:
-        st.session_state.land = gpd.read_file(r"C:\Users\P ADITHYA M NAIK\Desktop\IVROT\ne_10m_land.shp")
+        st.session_state.land = gpd.read_file(r"ne_10m_land.shp")
 
     def is_water(lat, lon):
         point = Point(lon, lat)
@@ -797,3 +797,4 @@ elif st.session_state["nav"] == "HISTORY":
         st.dataframe(df,use_container_width=True)
     except Exception as e:
         st.error(f"Error loading CSV: {e}")
+
