@@ -32,48 +32,66 @@ st.markdown("""
             object-fit: contain;
             background-color: white;
         }
+        /* Overlay for loading video */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
     </style>
 """, unsafe_allow_html=True)
 
 # ---- FILE PATHS ----
-splash_video = "YouCut_20251028_153909796.mp4"  # first video
-loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # second video
+splash_video = "YouCut_20251028_153909796.mp4"  # splash
+loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # loading
 
 
-def embed_video(file_path, loop=False):
-    """Reads a video file and embeds it as a base64 HTML video with no controls."""
+def embed_video_overlay(file_path, loop=False):
+    """Embed video as full-screen overlay with no controls."""
     with open(file_path, "rb") as f:
         video_bytes = f.read()
     base64_video = base64.b64encode(video_bytes).decode("utf-8")
     loop_attr = "loop" if loop else ""
-    video_html = f"""
-        <video autoplay {loop_attr} muted playsinline>
-            <source src="data:video/mp4;base64,{base64_video}" type="video/mp4">
-        </video>
+    html = f"""
+        <div id="loading-overlay">
+            <video autoplay {loop_attr} muted playsinline>
+                <source src="data:video/mp4;base64,{base64_video}" type="video/mp4">
+            </video>
+        </div>
     """
-    st.markdown(video_html, unsafe_allow_html=True)
+    st.markdown(html, unsafe_allow_html=True)
 
 
 # ---- APP LOGIC ----
 
-# Splash screen (only once per session)
+# Splash screen (only once)
 if "splash_played" not in st.session_state:
     st.session_state.splash_played = True
-    embed_video(splash_video, loop=False)
-    time.sleep(10) # Adjust based on video duration
+    embed_video_overlay(splash_video, loop=False)
+    time.sleep(10)  # Adjust to splash video length
     st.rerun()
 
-# Main app interface
+# Main interface
 st.title("🚀 My Streamlit App")
 
+# Simulated background task with loading overlay
 if st.button("Run Task"):
-    # Play looping loading video while processing
-    embed_video(loading_video, loop=True)
+    # Show full-screen loading video overlay
+    embed_video_overlay(loading_video, loop=True)
 
+    # Simulate background process
     with st.spinner("Processing..."):
-        time.sleep(5)  # Simulated task
+        time.sleep(5)  # Replace with your actual long-running code
 
-    st.success("✅ Task Complete!")
+    # Hide overlay by rerunning app
+    st.rerun()
 
 else:
     st.info("Click the button above to start a task.")
