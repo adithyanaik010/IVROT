@@ -32,7 +32,6 @@ st.markdown("""
             object-fit: contain;
             background-color: white;
         }
-        /* Overlay for loading video */
         #loading-overlay {
             position: fixed;
             top: 0;
@@ -49,12 +48,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---- FILE PATHS ----
-splash_video = "YouCut_20251028_153909796.mp4"  # splash
-loading_video = "IVROT_20251028_150435_0000-vmake.mp4"  # loading
+splash_video = "YouCut_20251028_153909796.mp4"
+loading_video = "IVROT_20251028_150435_0000-vmake.mp4"
 
 
 def embed_video_overlay(file_path, loop=False):
-    """Embed video as full-screen overlay with no controls."""
+    """Embed video as fullscreen overlay (encoded base64)."""
     with open(file_path, "rb") as f:
         video_bytes = f.read()
     base64_video = base64.b64encode(video_bytes).decode("utf-8")
@@ -69,29 +68,35 @@ def embed_video_overlay(file_path, loop=False):
     st.markdown(html, unsafe_allow_html=True)
 
 
-# ---- APP LOGIC ----
-
-# Splash screen (only once)
+# ---- STATE CONTROL ----
 if "splash_played" not in st.session_state:
+    st.session_state.splash_played = False
+if "show_loading" not in st.session_state:
+    st.session_state.show_loading = False
+
+
+# ---- SPLASH SCREEN ----
+if not st.session_state.splash_played:
+    embed_video_overlay(splash_video)
+    time.sleep(10)  # adjust duration
     st.session_state.splash_played = True
-    embed_video_overlay(splash_video, loop=False)
-    time.sleep(10)  # Adjust to splash video length
     st.rerun()
 
-# Main interface
+
+# ---- LOADING OVERLAY ----
+if st.session_state.show_loading:
+    embed_video_overlay(loading_video, loop=True)
+    # Simulate background task
+    time.sleep(5)  # replace with your actual code
+    st.session_state.show_loading = False
+    st.rerun()
+
+
+# ---- MAIN APP INTERFACE ----
 st.title("🚀 My Streamlit App")
 
-# Simulated background task with loading overlay
 if st.button("Run Task"):
-    # Show full-screen loading video overlay
-    embed_video_overlay(loading_video, loop=True)
-
-    # Simulate background process
-    with st.spinner("Processing..."):
-        time.sleep(5)  # Replace with your actual long-running code
-
-    # Hide overlay by rerunning app
+    st.session_state.show_loading = True
     st.rerun()
-
 else:
     st.info("Click the button above to start a task.")
