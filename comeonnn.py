@@ -284,8 +284,8 @@ st.markdown(
     .ivrot-nav-row button,
     .stButton > button,
     div.stButton > button {
-      background: var(--ivrot-bg) !important;
-      color: var(--ivrot-text) !important;
+      background: white !important;
+      color: black !important;
       border: 1px solid var(--ivrot-border) !important;
       padding: 14px 24px !important; /* bigger buttons */
       border-radius: 12px !important;
@@ -797,5 +797,6 @@ elif st.session_state["nav"] == "HISTORY":
         st.dataframe(df,use_container_width=True)
     except Exception as e:
         st.error(f"Error loading CSV: {e}")
+
 
 
