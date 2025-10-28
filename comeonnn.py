@@ -3,7 +3,12 @@
 # Streamlit Cloud Optimized Version
 # Author: Fixed & Rebuilt by ChatGPT (GPT-5)
 # ===============================================================
+import base64
+encoded = base64.b64encode(b'data to be encoded')
+encoded
 
+data = base64.b64decode(encoded)
+data
 import streamlit as st
 from pathlib import Path
 import base64
