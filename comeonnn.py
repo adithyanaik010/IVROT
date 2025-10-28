@@ -272,6 +272,8 @@ st.markdown(
 
     .ivrot-nav-row {
       display:flex;
+      background: var(--ivrot-bg) !important;
+      color: var(--ivrot-text) !important;
       flex-direction:column;
       gap:16px; /* increased gap between buttons */
       align-items:center;
@@ -306,6 +308,8 @@ st.markdown(
     .stButton > button[data-active="true"],
     div.stButton > button[data-active="true"] {
       box-shadow: none !important;
+      background: var(--ivrot-bg) !important;
+      color: var(--ivrot-text) !important;
       border-width: 2px !important;
     }
 
@@ -354,8 +358,8 @@ feedback_css = (
     ".st-expander,\n"
     ".stExpanderHeader,\n"
     ".stExpanderContent {\n"
-    "  background: var(--ivrot-feedback-bg) !important;\n"
-    "  color: var(--ivrot-feedback-text) !important;\n"
+    "  background: var(--ivrot-bg) !important;\n"
+    "  color: var(--ivrot-text) !important;\n"
     "  padding: 12px 14px !important;\n"
     "  border-radius: 10px !important;\n"
     "  box-shadow: none !important;\n"
@@ -364,8 +368,8 @@ feedback_css = (
     "div[data-testid=\"stExpander\"] input,\n"
     ".stExpander textarea,\n"
     ".stExpander input {\n"
-    "  color: var(--ivrot-feedback-text) !important;\n"
-    "  background: transparent !important;\n"
+    "  color: var(--ivrot-text) !important;\n"
+    "  background: var(--ivrot-bg) !important;\n"
     "}\n"
     "div[data-testid=\"stExpander\"] .stButton > button,\n"
     ".stExpander .stButton > button {\n"
@@ -797,6 +801,7 @@ elif st.session_state["nav"] == "HISTORY":
         st.dataframe(df,use_container_width=True)
     except Exception as e:
         st.error(f"Error loading CSV: {e}")
+
 
 
 
