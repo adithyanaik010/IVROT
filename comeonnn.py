@@ -3,25 +3,20 @@
 # Streamlit Cloud Optimized Version
 # Author: Fixed & Rebuilt by ChatGPT (GPT-5)
 # ===============================================================
-import base64
 
-def get_base64(file_path):
-    with open(file_path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("utf-8")
-    return encoded
-
-import streamlit as st
-from pathlib import Path
 import base64
 import time
-import folium
-from streamlit_folium import st_folium
 import math
+import random
+from pathlib import Path
+from datetime import datetime
+from io import BytesIO
+
+import streamlit as st
+import folium
 import numpy as np
 import pandas as pd
-from datetime import datetime
-import random
-from io import BytesIO
+from streamlit_folium import st_folium
 
 # ===============================================================
 # PAGE CONFIGURATION
@@ -36,7 +31,7 @@ st.set_page_config(
 # ===============================================================
 # UTILITY FUNCTIONS
 # ===============================================================
-def read_file_base64(path):
+def read_file_base64(path: Path) -> str:
     """Safely read a file and return its base64-encoded string."""
     try:
         with open(path, "rb") as f:
@@ -45,11 +40,11 @@ def read_file_base64(path):
         return ""
 
 @st.cache_data(show_spinner=False)
-def get_video_base64(path):
+def get_video_base64(path: Path) -> str:
     """Cache base64 video loading for performance."""
     return read_file_base64(path)
 
-def video_overlay_html(base64_mp4, overlay_id, loop=False):
+def video_overlay_html(base64_mp4: str, overlay_id: str, loop: bool = False) -> str:
     """Return HTML snippet for a fullscreen video overlay."""
     if not base64_mp4:
         return ""
@@ -72,7 +67,7 @@ def video_overlay_html(base64_mp4, overlay_id, loop=False):
     </div>
     """
 
-def hide_overlay_js(overlay_id):
+def hide_overlay_js(overlay_id: str) -> str:
     """Return JS snippet to fade and remove overlay after playback."""
     return f"""
     <script>
@@ -124,14 +119,14 @@ if not st.session_state["splash_played"]:
     if splash_b64:
         splash_container.markdown(video_overlay_html(splash_b64, "splash"), unsafe_allow_html=True)
         st.markdown(hide_overlay_js("splash"), unsafe_allow_html=True)
-    # mark splash as played instantly (async)
     st.session_state["splash_played"] = True
-    time.sleep(1)  # small wait to ensure overlay shows
+    time.sleep(1)  # Small delay to ensure overlay appears
 
 # ===============================================================
 # LOADING OVERLAY HELPER
 # ===============================================================
 loading_container = st.empty()
+
 def show_loading_overlay():
     if loading_b64:
         loading_container.markdown(
@@ -163,7 +158,8 @@ def holtrop_resistance(Lpp, B, T, V, rho=1025, nu=1e-6, Cb=0.6, S=None):
 # NAVIGATION BAR
 # ===============================================================
 st.sidebar.title("🎥 IVROT")
-nav_choice = st.sidebar.radio("Navigation", ["HOME", "NEW TRAJECTORY", "HISTORY", "SHIP DATA"], index=["HOME", "NEW TRAJECTORY", "HISTORY", "SHIP DATA"].index(st.session_state["nav"]))
+nav_options = ["HOME", "NEW TRAJECTORY", "HISTORY", "SHIP DATA"]
+nav_choice = st.sidebar.radio("Navigation", nav_options, index=nav_options.index(st.session_state["nav"]))
 st.session_state["nav"] = nav_choice
 
 # ===============================================================
@@ -216,7 +212,7 @@ elif nav_choice == "NEW TRAJECTORY":
             if st.session_state["start"] and st.session_state["end"]:
                 show_loading_overlay()
                 st.session_state["loading"] = True
-                time.sleep(2)  # simulate backend processing
+                time.sleep(2)  # Simulate backend processing
                 st.session_state["route_generated"] = True
                 hide_loading_overlay()
                 st.session_state["loading"] = False
