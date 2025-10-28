@@ -10,8 +10,6 @@ def get_base64(file_path):
         encoded = base64.b64encode(f.read()).decode("utf-8")
     return encoded
 
-data = base64.b64decode(encoded)
-data
 import streamlit as st
 from pathlib import Path
 import base64
