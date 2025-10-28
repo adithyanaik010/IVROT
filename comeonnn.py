@@ -23,6 +23,15 @@ import csv
 import time
 import traceback
 # ------------------------- Splash handling (synchronous) -------------------------
+
+# ------------------------- Configuration & helpers -------------------------
+st.set_page_config(page_title="IVROT", layout="wide", page_icon="🎥")
+
+# Filenames for videos (edit if different)
+SPLASH_VIDEO_FILE = "YouCut_20251028_153909796.mp4"
+LOADING_VIDEO_FILE = "IVROT_20251028_150435_0000-vmake.mp4"
+
+
 splash_b64 = get_base64(SPLASH_VIDEO_FILE)
 loading_b64 = get_base64(LOADING_VIDEO_FILE)
 
@@ -32,7 +41,7 @@ if not st.session_state.splash_played:
     # show splash overlay synchronously (the browser will render and play while we wait)
     placeholder_splash = st.empty()
     if splash_b64:
- placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False,overlay_id="splash"), unsafe_allow_html=True)
+        placeholder_splash.markdown(overlay_video_html(splash_b64, loop=False,overlay_id="splash"), unsafe_allow_html=True)
         # Allow small pause so the browser can start playing the video before we block for duration
         time.sleep(0.1)
         # Wait for the duration (the user will see the video)
@@ -44,15 +53,7 @@ if not st.session_state.splash_played:
     except Exception:
         pass
     # continue (no rerun needed)
-
        
-# ------------------------- Configuration & helpers -------------------------
-st.set_page_config(page_title="IVROT", layout="wide", page_icon="🎥")
-
-# Filenames for videos (edit if different)
-SPLASH_VIDEO_FILE = "YouCut_20251028_153909796.mp4"
-LOADING_VIDEO_FILE = "IVROT_20251028_150435_0000-vmake.mp4"
-
 # Images / icons used by UI (if present)
 BG_IMAGE = r"Navigation_2.jpg"
 LOGO_LIGHT_PNG = Path(r"IVROT-removebg-preview.png")
