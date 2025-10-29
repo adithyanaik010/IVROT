@@ -297,13 +297,14 @@ st.markdown(
       background-size: cover;
     }
 
-    /* Header (transparent so Streamlit default theme applies) */
+    /* Header (styles kept the same) */
     .ivrot-header {
-      position: relative;  
-      top: 0;
+      position:  flexible;  
+      top: 25px;
       left: 0;
       right: 0;
-      width: 100%;
+      width: 100d%;
+      height: 25%;
       z-index: 999;
       display: flex;
       align-items: center;
@@ -311,8 +312,9 @@ st.markdown(
       padding: 8px 50px;
       box-sizing: border-box;
       border-radius: 0 0 12px 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
       transition: background-color 200ms ease, color 200ms ease;
-      background: transparent !important;
+      background: var(--ivrot-bg) !important;
       color: var(--ivrot-text) !important;
       overflow: visible !important;
     }
@@ -326,12 +328,11 @@ st.markdown(
 
     .ivrot-nav-row {
       display:flex;
-      background: transparent !important;
-      color: var(--ivrot-text) !important;
-      flex-direction:row;
-      gap:10px;
+      flex-direction:column;
+      gap:16px; /* increased gap between buttons */
       align-items:center;
-      margin-top:10px;
+      margin-top:20px; /* lowered buttons below header */
+      transform: translateY(40px); /* move buttons lower */
       transition: transform 160ms ease;
       pointer-events: auto;
     }
@@ -339,21 +340,21 @@ st.markdown(
     .ivrot-nav-row button,
     .stButton > button,
     div.stButton > button {
-      background: rgba(255,255,255,0.06) !important;
+      background: var(--ivrot-bg) !important;
       color: var(--ivrot-text) !important;
-      border: 1px solid rgba(255,255,255,0.12) !important;
-      padding: 10px 18px !important;
-      border-radius: 10px !important;
+      border: 1px solid var(--ivrot-border) !important;
+      padding: 14px 24px !important; /* bigger buttons */
+      border-radius: 12px !important;
       font-weight:700 !important;
       cursor:pointer !important;
-      font-size:14px !important;
+      font-size:18px !important; /* larger text */
       transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease !important;
     }
 
     .ivrot-nav-row button:hover,
     .stButton > button:hover,
     div.stButton > button:hover {
-      transform: translateY(-1px) !important;
+      transform: translateY(-2px) !important;
       box-shadow: var(--ivrot-hover-shadow) !important;
     }
 
@@ -361,22 +362,20 @@ st.markdown(
     .stButton > button[data-active="true"],
     div.stButton > button[data-active="true"] {
       box-shadow: none !important;
-      background: rgba(255,255,255,0.08) !important;
-      color: var(--ivrot-text) !important;
       border-width: 2px !important;
     }
 
     .ivrot-right button {
-      background: transparent !important; 
+      background: transparent !important;
       border: none !important;
-      font-size:16px !important;
+      font-size:20px !important;
       cursor:pointer !important;
       padding:8px !important;
       border-radius:8px !important;
       color: var(--ivrot-text) !important;
       font-weight:700 !important;
     }
-    .ivrot-right button:hover { background: rgba(255,255,255,0.04) !important; }
+    .ivrot-right button:hover { background: rgba(0,0,0,0.06) !important; }
 
     @media (max-width: 800px) {
       .ivrot-left img { height:40px; }
