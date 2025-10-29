@@ -62,6 +62,13 @@ def embed_intro_video(video_path):
     """
     st.markdown(html, unsafe_allow_html=True)
 
+if "intro_played" not in st.session_state:
+    # First time: play intro video
+    embed_intro_video(INTRO_VIDEO)
+    st.session_state.intro_played = True
+    time.sleep(VIDEO_DURATION)  # wait until video finishes
+    st.rerun()
+
 
 # ------------------ CUSTOM CSS ------------------
 st.markdown(
