@@ -842,7 +842,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
             marker_route = [(float(p[1]), float(p[2])) for p in st.session_state.route_points]
 
             # parameters: how many interpolated control points between each marker
-            num_waypoints_between = 100 # user-snippet style: 5
+            num_waypoints_between = 10 # user-snippet style: 5
             generated_vertices = []
 
             for idx in range(len(marker_route) - 1):
