@@ -601,14 +601,46 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
     st.header("New Trajectory")
 
     # --- Trajectory session state ---
-    # (start/end/route/clusters/waypoints/land already initialized earlier)
+    # Keep compatibility with existing state variables
+    if "route_points" not in st.session_state:
+        # route_points is an ordered list of tuples: (type, lat, lon)
+        # type is 'start', 'wp' (waypoint) or 'end'
+        st.session_state.route_points = []
 
-    # Ensure last click tracker to avoid double-appending same click on rerun
+    if "select_mode" not in st.session_state:
+        # 'start', 'waypoint', 'end', or None
+        st.session_state.select_mode = None
+
     if "last_map_click" not in st.session_state:
-        st.session_state["last_map_click"] = None
+        st.session_state.last_map_click = None
+
+    # ensure other existing session defaults remain (start/end/route/clusters/waypoints)
+    if "start" not in st.session_state:
+        st.session_state.start = [None, None]
+    if "end" not in st.session_state:
+        st.session_state.end = [None, None]
+    if "route" not in st.session_state:
+        st.session_state.route = None
+    if "clusters" not in st.session_state:
+        st.session_state.clusters = []
 
     # --- Sidebar for NEW TRAJECTORY ---
     with st.sidebar.expander("Route Points & Ship"):
+        st.markdown("**Select point type, then click on the map to place it (order is preserved).**")
+        col_a, col_b, col_c = st.columns([1,1,1])
+        with col_a:
+            if st.button("Start Point", key="select_start_btn"):
+                st.session_state.select_mode = "start"
+        with col_b:
+            if st.button("Waypoint", key="select_wp_btn"):
+                st.session_state.select_mode = "waypoint"
+        with col_c:
+            if st.button("End Point", key="select_end_btn"):
+                st.session_state.select_mode = "end"
+
+        st.markdown(f"**Current mode:** {st.session_state.select_mode or 'None'}")
+
+        # existing inputs retained unchanged
         start_lat = st.number_input("Start Latitude", value=st.session_state.start[0] or 0.0)
         start_lon = st.number_input("Start Longitude", value=st.session_state.start[1] or 0.0)
         end_lat = st.number_input("End Latitude", value=st.session_state.end[0] or 0.0)
@@ -629,18 +661,17 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         reset = st.button("Reset Trajectory")
         generate = st.button("Generate Route")
 
-        # If user types start/end in sidebar and there are no waypoints yet, seed them
-        if (start_lat != 0.0 or start_lon != 0.0) and not st.session_state.waypoints:
-            st.session_state.start = [start_lat, start_lon]
-            st.session_state.waypoints = [(float(start_lat), float(start_lon))]
-        if (end_lat != 0.0 or end_lon != 0.0) and not st.session_state.waypoints:
-            # if start was seeded above, now append end
-            if st.session_state.waypoints:
-                st.session_state.waypoints.append((float(end_lat), float(end_lon)))
-            else:
-                st.session_state.waypoints = [(float(end_lat), float(end_lon))]
-            st.session_state.end = [end_lat, end_lon]
+        # If user types start/end in sidebar and route_points empty, seed them as start/end appropriately
+        if (start_lat != 0.0 or start_lon != 0.0) and not any(pt[0] == "start" for pt in st.session_state.route_points):
+            # put start at beginning
+            st.session_state.start = [float(start_lat), float(start_lon)]
+            st.session_state.route_points.insert(0, ("start", float(start_lat), float(start_lon)))
+        if (end_lat != 0.0 or end_lon != 0.0) and not any(pt[0] == "end" for pt in st.session_state.route_points):
+            # ensure end is at the end
+            st.session_state.end = [float(end_lat), float(end_lon)]
+            st.session_state.route_points.append(("end", float(end_lat), float(end_lon)))
 
+    # Reset behavior — clear route_points and related state
     if reset:
         st.session_state.start = [None, None]
         st.session_state.end = [None, None]
@@ -652,7 +683,8 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.session_state["voyage_timestamp"] = None
         st.session_state["feedback_rating"] = 3
         st.session_state["feedback_text"] = "Average: Routine voyage with some manageable issues."
-        st.session_state.waypoints = []
+        st.session_state.route_points = []
+        st.session_state.select_mode = None
         st.session_state.last_map_click = None
 
     # --- Map for selecting points ---
@@ -660,68 +692,70 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
     with map_container:
         m = folium.Map(location=[20.5937,78.9629], zoom_start=5, tiles="CartoDB positron")
 
-        # display waypoints in order (first green, intermediates blue, last red)
-        if st.session_state.waypoints:
-            for idx, (lat, lon) in enumerate(st.session_state.waypoints):
-                if idx == 0:
-                    icon = folium.Icon(color="green")
-                    popup = f"Start (WP {idx+1})"
-                elif idx == len(st.session_state.waypoints) - 1:
-                    icon = folium.Icon(color="red")
-                    popup = f"End (WP {idx+1})"
-                else:
-                    icon = folium.Icon(color="blue")
-                    popup = f"WP {idx+1}"
-                folium.Marker([lat, lon], popup=popup, icon=icon).add_to(m)
-        else:
-            # fallback to previously stored start/end markers (if any)
+        # Display route_points in order (first to last)
+        for idx, item in enumerate(st.session_state.route_points):
+            typ, lat, lon = item[0], item[1], item[2]
+            if typ == "start":
+                folium.Marker([lat, lon], popup=f"Start (pos {idx+1})", icon=folium.Icon(color="green")).add_to(m)
+            elif typ == "end":
+                folium.Marker([lat, lon], popup=f"End (pos {idx+1})", icon=folium.Icon(color="red")).add_to(m)
+            else:  # waypoint
+                folium.Marker([lat, lon], popup=f"WP {idx+1}", icon=folium.Icon(color="blue")).add_to(m)
+
+        # fallback markers if no route_points but start/end exist (compatibility)
+        if not st.session_state.route_points:
             if st.session_state.start != [None, None]:
                 folium.Marker(st.session_state.start, popup="Start", icon=folium.Icon(color="green")).add_to(m)
             if st.session_state.end != [None, None]:
                 folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m)
 
-        # get clicks
         map_click = st_folium(m, width="100%", height=600, key="click_map")
 
-    # Append every new click (in order) to waypoints.
-    # Use a last-click guard so reruns don't duplicate the same click.
+    # --- Handle clicks depending on select_mode ---
     if map_click and map_click.get("last_clicked"):
-        lat = float(map_click["last_clicked"]["lat"])
-        lon = float(map_click["last_clicked"]["lng"])
-        this_click = (round(lat, 6), round(lon, 6))
+        lat = round(float(map_click["last_clicked"]["lat"]), 6)
+        lon = round(float(map_click["last_clicked"]["lng"]), 6)
+        this_click = (lat, lon)
+        # avoid duplicate processing of same click across reruns
         if st.session_state.last_map_click != this_click:
             st.session_state.last_map_click = this_click
-            # Append click regardless of whether water or land so user picks exact ordered waypoints.
-            # We'll perform lightweight avoidance when generating the route.
-            st.session_state.waypoints.append(this_click)
-            # update start/end to reflect first/last clicked
-            if st.session_state.waypoints:
-                st.session_state.start = [st.session_state.waypoints[0][0], st.session_state.waypoints[0][1]]
-                st.session_state.end = [st.session_state.waypoints[-1][0], st.session_state.waypoints[-1][1]]
+            mode = st.session_state.select_mode
+            if mode == "start":
+                # remove any existing 'start' and insert this as the first element
+                st.session_state.route_points = [pt for pt in st.session_state.route_points if pt[0] != "start"]
+                st.session_state.route_points.insert(0, ("start", lat, lon))
+                st.session_state.start = [lat, lon]
+                # if there was an 'end' and it accidentally is before start, ensure end remains last
+                ends = [pt for pt in st.session_state.route_points if pt[0] == "end"]
+                if ends and st.session_state.route_points[-1][0] != "end":
+                    # move existing end to last position
+                    st.session_state.route_points = [pt for pt in st.session_state.route_points if pt[0] != "end"] + ends
+            elif mode == "end":
+                # remove any existing 'end' and append this as the last element
+                st.session_state.route_points = [pt for pt in st.session_state.route_points if pt[0] != "end"]
+                st.session_state.route_points.append(("end", lat, lon))
+                st.session_state.end = [lat, lon]
+            elif mode == "waypoint":
+                # append waypoint in order
+                st.session_state.route_points.append(("wp", lat, lon))
+            else:
+                # if no mode selected, ignore the click (user must press one of the three buttons first)
+                st.warning("Select a mode in the sidebar (Start Point / Waypoint / End Point) before clicking on the map.")
+                # do not change session state
+                pass
 
-    # --- Helper: take a straight segment and split/insert detours if it crosses land ---
+    # --- Helper: Avoid land between consecutive points (recursive midpoint detour) ---
     def build_segment_avoiding_land(p1, p2, max_depth=8):
-        """
-        Returns an ordered list of points starting at p2 that are reachable from p1 without hitting land
-        using a simple recursive midpoint-detour method.
-        p1, p2 are (lat, lon) tuples.
-        """
-        # internal recursive function
         def _recurse(a, b, depth):
-            # safety
             if depth > max_depth:
                 return [b]
-
-            # sample along the straight line; if any sample point lies on land, we need to detour
             n_samples = 8
             for i in range(1, n_samples):
                 t = i / float(n_samples)
                 lat = a[0] + (b[0] - a[0]) * t
                 lon = a[1] + (b[1] - a[1]) * t
                 if not is_water(lat, lon):
-                    # found land along the segment; compute midpoint and search for nearest water around it
                     mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
-                    # try offsets with increasing radius (degrees). small radii first.
                     radii = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
                     angles = list(range(0, 360, 30))
                     for r in radii:
@@ -732,63 +766,40 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                             if is_water(cand_lat, cand_lon):
                                 left = _recurse(a, (cand_lat, cand_lon), depth + 1)
                                 right = _recurse((cand_lat, cand_lon), b, depth + 1)
-                                # left includes its endpoint; combine carefully to avoid duplicates
                                 return left[:-1] + right
-                    # if no nearby water found, fallback by returning b (give up)
                     return [b]
-            # no land samples -> straight segment OK
             return [b]
-
         return _recurse(p1, p2, 0)
 
-    # --- Generate route ---
+    # --- Generate route (ordered by route_points sequence) ---
     if generate:
-        # require at least two waypoints (ordered by clicks) OR sidebar-provided start+end if waypoints empty
-        if st.session_state.waypoints and len(st.session_state.waypoints) >= 2:
-            clicked_route = [(float(lat), float(lon)) for lat, lon in st.session_state.waypoints]
-            # Build final_route by checking each consecutive segment and inserting detours when required
+        # require at least a start and end in route_points
+        types = [pt[0] for pt in st.session_state.route_points]
+        if ("start" in types) and ("end" in types) and len(st.session_state.route_points) >= 2:
+            # Build ordered clicked_route: preserve the route_points list order
+            clicked_route = [(pt[1], pt[2]) for pt in st.session_state.route_points]
+            # Use land-avoiding routine between consecutive points
             final_route = [clicked_route[0]]
             for i in range(len(clicked_route) - 1):
                 a = final_route[-1]
                 b = clicked_route[i + 1]
-                seg_points = build_segment_avoiding_land(a, b)  # returns list of points ending at b (or detours)
-                # seg_points is list of endpoints (p2) in recursion; append them sequentially
+                seg_points = build_segment_avoiding_land(a, b)
                 for p in seg_points:
-                    # avoid duplicate consecutive points
-                    if (round(final_route[-1][0],6), round(final_route[-1][1],6)) != (round(p[0],6), round(p[1],6)):
+                    if (round(final_route[-1][0], 6), round(final_route[-1][1], 6)) != (round(p[0], 6), round(p[1], 6)):
                         final_route.append((float(p[0]), float(p[1])))
             st.session_state.route = final_route
-            # ensure session start/end reflect clicked sequence first/last exactly
-            st.session_state.start = [clicked_route[0][0], clicked_route[0][1]]
-            st.session_state.end = [clicked_route[-1][0], clicked_route[-1][1]]
-        elif st.session_state.start != [None, None] and st.session_state.end != [None, None]:
-            # fallback: retain original randomized-intermediate behavior between start & end (no waypoints clicked)
-            num_waypoints = 5
-            lats = [st.session_state.start[0]]
-            lons = [st.session_state.start[1]]
-            for i in range(1, num_waypoints):
-                frac = i / num_waypoints
-                lat = st.session_state.start[0] + (st.session_state.end[0] - st.session_state.start[0]) * frac
-                lon = st.session_state.start[1] + (st.session_state.end[1] - st.session_state.start[1]) * frac
-                attempt = 0
-                while True:
-                    lat_offset = random.uniform(-2, 2)
-                    lon_offset = random.uniform(-2, 2)
-                    new_lat = lat + lat_offset
-                    new_lon = lon + lon_offset
-                    if is_water(new_lat, new_lon) or attempt > 10:
-                        break
-                    attempt += 1
-                lats.append(new_lat)
-                lons.append(new_lon)
-            lats.append(st.session_state.end[0])
-            lons.append(st.session_state.end[1])
-            st.session_state.route = list(zip(lats, lons))
+            # update start/end session vars explicitly from ordered route_points
+            first = next((pt for pt in st.session_state.route_points if pt[0] == "start"), None)
+            last = next((pt for pt in reversed(st.session_state.route_points) if pt[0] == "end"), None)
+            if first:
+                st.session_state.start = [first[1], first[2]]
+            if last:
+                st.session_state.end = [last[1], last[2]]
         else:
-            st.error("Please click at least two points on the map (first click = start, last click = end) or fill start and end coordinates in the sidebar.")
+            st.error("You must define at least one Start Point and one End Point (and any number of Waypoints in between). Use the sidebar buttons to choose the type, then click the map in the desired locations.")
             st.session_state.route = None
 
-        # proceed with cluster generation and CSV if route was created
+        # If a route is created, generate clusters & CSV metrics (same behavior as before)
         if st.session_state.route:
             clusters = []
             for i in range(len(st.session_state.route) - 1):
@@ -834,7 +845,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             st.session_state["route_generated"] = True
             st.session_state["show_res"] = False
 
-            # compute voyage metrics and append to CSV (same as before)
+            # compute voyage metrics
             def haversine(lat1, lon1, lat2, lon2):
                 R = 6371.0
                 phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -853,11 +864,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             hours_needed = total_distance_nm / ship_speed_knots
             etd = datetime.combine(start_date, datetime.min.time())
             eta = etd + timedelta(hours=hours_needed)
-
-            # Update start/end in session (already set from waypoints)
-            if st.session_state.route and len(st.session_state.route) >= 1:
-                st.session_state.start = [st.session_state.route[0][0], st.session_state.route[0][1]]
-                st.session_state.end = [st.session_state.route[-1][0], st.session_state.route[-1][1]]
 
             if not st.session_state.get("voyage_saved", False):
                 ts = datetime.now().isoformat()
@@ -889,38 +895,32 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                 except Exception as e:
                     st.error(f"Failed to save voyage: {e}")
 
-    # --- Final Map with route & clusters (unchanged display logic) ---
+    # --- Final Map with route & clusters ---
     map_container2 = st.container()
     with map_container2:
         m2 = folium.Map(location=[20.5937,78.9629], zoom_start=5, tiles="CartoDB positron")
-        if st.session_state.waypoints:
-            for idx, (lat, lon) in enumerate(st.session_state.waypoints):
-                if idx == 0:
-                    icon = folium.Icon(color="green")
-                    popup = f"Start (WP {idx+1})"
-                elif idx == len(st.session_state.waypoints) - 1:
-                    icon = folium.Icon(color="red")
-                    popup = f"End (WP {idx+1})"
-                else:
-                    icon = folium.Icon(color="blue")
-                    popup = f"WP {idx+1}"
-                folium.Marker([lat, lon], popup=popup, icon=icon).add_to(m2)
-        else:
-            if st.session_state.start != [None, None]:
-                folium.Marker(st.session_state.start, popup="Start", icon=folium.Icon(color="green")).add_to(m2)
-            if st.session_state.end != [None, None]:
-                folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m2)
+
+        # display ordered route_points markers
+        for idx, item in enumerate(st.session_state.route_points):
+            typ, lat, lon = item[0], item[1], item[2]
+            if typ == "start":
+                folium.Marker([lat, lon], popup=f"Start (pos {idx+1})", icon=folium.Icon(color="green")).add_to(m2)
+            elif typ == "end":
+                folium.Marker([lat, lon], popup=f"End (pos {idx+1})", icon=folium.Icon(color="red")).add_to(m2)
+            else:
+                folium.Marker([lat, lon], popup=f"WP {idx+1}", icon=folium.Icon(color="blue")).add_to(m2)
 
         if st.session_state.route:
             folium.PolyLine(st.session_state.route, color="blue", weight=3).add_to(m2)
         if st.session_state.clusters:
             for point in st.session_state.clusters:
-                total = point["wave"] + point["wind"] + point["current"]
-                tooltip_text = f"Wave: {point['wave']} | Wind: {point['wind']} | Current: {point['current']} (Total: {total}/300)"
-                folium.CircleMarker(location=[point["lat"], point["lon"]],
-                                    radius=2, color="green", fill=True, fill_opacity=0.6,
+                total = point["wave"]+point["wind"]+point["current"]
+                tooltip_text=f"Wave: {point['wave']} | Wind: {point['wind']} | Current: {point['current']} (Total: {total}/300)"
+                folium.CircleMarker(location=[point["lat"],point["lon"]],
+                                    radius=2,color="green",fill=True,fill_opacity=0.6,
                                     tooltip=tooltip_text).add_to(m2)
         st_folium(m2, width="100%", height=600, key="final_map")
+
 
 # ---------- SHIP DATA PAGE ----------
 elif st.session_state["nav"] == "SHIP DATA":
