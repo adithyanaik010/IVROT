@@ -31,16 +31,23 @@ st.set_page_config(page_title="IVROT", layout="wide")
 # -------------------------------
 # FUNCTION TO EMBED VIDEO
 # -------------------------------
-def embed_intro_video(video_path):
-    """Play intro video full-screen once."""
+# -------------------------------
+# INTRO VIDEO (non-blocking, auto-remove overlay)
+# -------------------------------
+def embed_intro_video_auto_remove(video_path, duration_sec=12):
+    """
+    Embed a full-screen base64 video overlay that auto-removes itself when the video ends
+    (or after duration_sec + 0.5s fallback). Does NOT call time.sleep or st.rerun.
+    """
     try:
         video_bytes = Path(video_path).read_bytes()
         b64 = base64.b64encode(video_bytes).decode()
     except Exception:
+        # if file missing or unreadable, silently skip
         return
 
     html = f"""
-    <div style="
+    <div id="ivrot_intro_overlay" style="
         position:fixed;
         top:0; left:0;
         width:100%; height:100%;
@@ -49,21 +56,38 @@ def embed_intro_video(video_path):
         justify-content:center;
         align-items:center;
         z-index:9999;">
-        <video autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;">
+        <video id="ivrot_intro_video" autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;">
             <source src="data:video/mp4;base64,{b64}" type="video/mp4">
         </video>
     </div>
+    <script>
+    (function() {{
+      const vid = document.getElementById('ivrot_intro_video');
+      const overlay = document.getElementById('ivrot_intro_overlay');
+      function removeOverlay() {{
+        try {{
+          if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }} catch(e) {{ /* ignore */ }}
+      }}
+      if (vid) {{
+        // remove on natural end
+        vid.addEventListener('ended', removeOverlay, false);
+        // also try to remove if playback fails or is blocked after a timeout (fallback)
+        setTimeout(removeOverlay, {int(duration_sec*1000 + 500)});
+      }} else {{
+        // fallback remove
+        setTimeout(removeOverlay, {int(duration_sec*1000 + 500)});
+      }}
+    }})();
+    </script>
     """
     st.markdown(html, unsafe_allow_html=True)
 
+# Play once (non-blocking) — set flag so we don't show it again
 if "intro_played" not in st.session_state:
-    # Play intro once using embedding; do not block with sleep/rerun to avoid interfering with state/toggles.
-    try:
-        embed_intro_video(INTRO_VIDEO)
-        st.session_state.intro_played = True
-        # We won't call time.sleep or st.rerun() — keep non-blocking.
-    except Exception:
-        pass
+    embed_intro_video_auto_remove(INTRO_VIDEO, duration_sec=VIDEO_DURATION)
+    st.session_state["intro_played"] = True
+
 
 # ------------------ CUSTOM CSS ------------------
 st.markdown(
