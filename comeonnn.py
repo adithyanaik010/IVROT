@@ -125,7 +125,8 @@ def resistance_hol(Lpp, B, T, V, rho, nu, Cb, S, lcb, Cwp, Cp, Cm, Abt, hb, At, 
     k1 = 1 + 0.15 * (Cb if not pd.isna(Cb) else 0.0)
     Rf = 0.5 * rho * V**2 * S * Cf * k1
     Fn = V / np.sqrt(9.81 * Lpp) if Lpp > 0 else 0.0
-    Rr = 0.5 * rho * V*2 * S * (0.004 + 0.002 * (Cb if not pd.isna(Cb) else 0.0)2) * (1 + 0.6 * np.exp(-((Fn - 0.25)/0.05)*2))
+    Rr = 0.5 * rho * V**2 * S * (0.004 + 0.002 * (Cb if not pd.isna(Cb) else 0.0)**2) * (1 + 0.6 * np.exp(-((Fn - 0.25)/0.05)**2))
+
     Rt = Rf + Rr
     return {'Rt': Rt, 'Rf': Rf, 'Rr': Rr}
 
