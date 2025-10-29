@@ -320,11 +320,11 @@ st.markdown(
     }
 
     .ivrot-left { display:flex; align-items:center; gap:16px; min-width:40px; }
-    .ivrot-left img { height:56px; width:auto; display:block; }
+    .ivrot-left img { height:200px; width:auto; display:block; }
 
     .ivrot-center { display:flex; flex-direction:column; align-items:flex-start; gap:5px; flex:1 1 auto; }
-    .ivrot-title { font-weight:800; font-size:28px; margin:0; color:var(--ivrot-text) !important; }
-    .ivrot-subtitle { font-size:14px; margin:0; opacity:0.95; color:var(--ivrot-text) !important; }
+    .ivrot-title { font-weight:800; font-size:40px; margin:0; color:var(--ivrot-text) !important; }
+    .ivrot-subtitle { font-size:20px; margin:0; opacity:0.95; color:var(--ivrot-text) !important; }
 
     .ivrot-nav-row {
       display:flex;
