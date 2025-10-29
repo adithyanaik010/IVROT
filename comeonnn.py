@@ -1,4 +1,4 @@
-# comeonnn_full_theming_with_shipdata.py
+# comeonnn_full_theming_with_shipdata_no_toggle.py
 import streamlit as st
 from pathlib import Path
 import base64
@@ -18,11 +18,7 @@ from io import StringIO
 import os
 import csv
 
-
-import streamlit as st
-import base64
 import time
-from pathlib import Path
 
 # -------------------------------
 # CONFIG
@@ -39,11 +35,10 @@ def embed_intro_video(video_path):
     """Play intro video full-screen once."""
     try:
         video_bytes = Path(video_path).read_bytes()
-    except FileNotFoundError:
-        st.error(f"❌ Video not found: {video_path}")
+        b64 = base64.b64encode(video_bytes).decode()
+    except Exception:
         return
 
-    b64 = base64.b64encode(video_bytes).decode()
     html = f"""
     <div style="
         position:fixed;
@@ -60,12 +55,15 @@ def embed_intro_video(video_path):
     </div>
     """
     st.markdown(html, unsafe_allow_html=True)
+
 if "intro_played" not in st.session_state:
-    # First time: play intro video
-    embed_intro_video(INTRO_VIDEO)
-    st.session_state.intro_played = True
-    time.sleep(VIDEO_DURATION)  # wait until video finishes
-    st.rerun()
+    # Play intro once using embedding; do not block with sleep/rerun to avoid interfering with state/toggles.
+    try:
+        embed_intro_video(INTRO_VIDEO)
+        st.session_state.intro_played = True
+        # We won't call time.sleep or st.rerun() — keep non-blocking.
+    except Exception:
+        pass
 
 # ------------------ CUSTOM CSS ------------------
 st.markdown(
@@ -142,7 +140,8 @@ def resistance_van(LWL, B, T, V, rho, nu, nabla, S, Cp, k2_factor):
     Cf = 0.075 / (np.log10(Rn) - 2)**2 if Rn > 0 else 0.0
     Rf = 0.5 * rho * S * V**2 * (Cf + (k2_factor if not pd.isna(k2_factor) else 0.0))
     Fn = V / np.sqrt(g * LWL) if LWL > 0 else 0.0
-    Rr = (1.1 + 0.3 * (Cp if not pd.isna(Cp) else 0.0)) * (Fn*2 / (0.32 + Fn2)) * 0.5 * rho * g * ((nabla*(2/3)) if nabla and nabla > 0 else 0.0)
+    denom = 0.32 + (Fn ** 2 if Fn is not None else 0.0)
+    Rr = (1.1 + 0.3 * (Cp if not pd.isna(Cp) else 0.0)) * ((2 * Fn) / denom if denom != 0 else 0.0) * 0.5 * rho * g * ((nabla * (2 / 3)) if (nabla and nabla > 0) else 0.0)
     Rt = Rf + Rr
     return {'Rt': Rt, 'Rf': Rf, 'Rr': Rr}
 
@@ -205,49 +204,30 @@ def append_voyage_to_csv(path, data):
 def update_feedback_in_csv(path, timestamp, rating, text):
     try:
         ensure_csv_exists(path, FIELDNAMES)
-        # read raw lines
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        if not lines:
-            return False
-
-        updated_rows = []
+        rows = []
         found = False
-
-        for raw in lines[1:]:
-            raw = raw.rstrip("\n")
-            parts = raw.split(",")
-            # combine extra splits into last field (FEEDBACK_TEXT) if the line had unquoted commas
-            if len(parts) > len(FIELDNAMES):
-                fixed = parts[: len(FIELDNAMES) - 1] + [",".join(parts[len(FIELDNAMES) - 1 :])]
-                parts = fixed
-            if len(parts) < len(FIELDNAMES):
-                parts = parts + [""] * (len(FIELDNAMES) - len(parts))
-            row = dict(zip(FIELDNAMES, parts))
-            if row.get("TIMESTAMP", "") == timestamp:
-                row["FEEDBACK_RATING"] = str(rating)
-                row["FEEDBACK_TEXT"] = text
-                found = True
-            updated_rows.append(row)
-
+        # read using DictReader
+        with open(path, "r", encoding="utf-8", newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row.get("TIMESTAMP", "") == timestamp:
+                    row["FEEDBACK_RATING"] = str(rating)
+                    row["FEEDBACK_TEXT"] = text
+                    found = True
+                rows.append(row)
         if not found:
             new_row = {k: "" for k in FIELDNAMES}
             new_row["TIMESTAMP"] = timestamp
             new_row["FEEDBACK_RATING"] = str(rating)
             new_row["FEEDBACK_TEXT"] = text
-            updated_rows.append(new_row)
-
-        # write back using csv writer to properly quote fields
-        with open(path, "w", newline="", encoding="utf-8") as f:
+            rows.append(new_row)
+        # write back
+        with open(path, "w", encoding="utf-8", newline='') as f:
             writer = csv.DictWriter(f, fieldnames=FIELDNAMES, quoting=csv.QUOTE_MINIMAL)
             writer.writeheader()
-            for r in updated_rows:
-                out = {k: ("" if r.get(k) is None else r.get(k)) for k in FIELDNAMES}
-                writer.writerow(out)
-
+            for r in rows:
+                writer.writerow({k: ("" if r.get(k) is None else r.get(k)) for k in FIELDNAMES})
         return True
-
     except Exception as e:
         st.error(f"Failed to update feedback in CSV: {e}")
         return False
@@ -266,8 +246,7 @@ page_icon = str(ICO_PATH) if ICO_PATH.exists() else None
 st.set_page_config(page_title="IVROT", layout="wide", page_icon=page_icon)
 
 # ---------- Session state defaults ----------
-if "theme_flag" not in st.session_state:
-    st.session_state["theme_flag"] = 0
+# Removed theme_flag; app will use Streamlit default theme + transparent header/backgrounds.
 if "nav" not in st.session_state:
     st.session_state["nav"] = "HOME"
 # flags for route & resistance UI
@@ -294,48 +273,32 @@ if "ship_df" not in st.session_state:
 if "ship_editor_state" not in st.session_state:
     st.session_state["ship_editor_state"] = {"mode": None}
 
-def toggle_theme_flag():
-    st.session_state["theme_flag"] = 1 if st.session_state["theme_flag"] == 0 else 0
-
-# ---------- Inject CSS ----------
-if st.session_state["theme_flag"] == 0:
-    root_vars = """
-    :root {
-      --ivrot-bg: #ffffff;
-      --ivrot-text: #0f1724;
-      --ivrot-border: rgba(2,6,23,0.06);
-      --ivrot-hover-shadow: 0 8px 18px rgba(2,6,23,0.06);
-    }
-    """
-    set_dark_script = "<script>document.documentElement.classList.remove('dark')</script>"
-else:
-    root_vars = """
-    :root {
-      --ivrot-bg: #0f1724;
-      --ivrot-text: #f8fafc;
-      --ivrot-border: rgba(248,250,252,0.06);
-      --ivrot-hover-shadow: 0 8px 18px rgba(248,250,252,0.04);
-    }
-    """
-    set_dark_script = "<script>document.documentElement.classList.add('dark')</script>"
+# ---------- Inject CSS (transparent + white text where background transparent) ----------
+root_vars = """
+:root {
+  --ivrot-bg: transparent;
+  --ivrot-text: #ffffff;
+  --ivrot-border: rgba(255,255,255,0.08);
+  --ivrot-hover-shadow: 0 8px 18px rgba(255,255,255,0.04);
+}
+"""
 
 # Use a single f-string only where safe (root_vars inserted); other large CSS blocks will be concatenated to avoid brace parsing.
 st.markdown(
     "<style>\n" + root_vars + """
-    /* background */
+    /* background: allow Streamlit default + use provided background image but keep containers transparent */
     [data-testid="stAppViewContainer"] {
       background: url(\"""" + bg_uri + """\") no-repeat center center fixed;
       background-size: cover;
     }
 
-    /* Header (styles kept the same) */
+    /* Header (transparent so Streamlit default theme applies) */
     .ivrot-header {
-      position:  flexible;  
-      top: 25px;
+      position: relative;  
+      top: 0;
       left: 0;
       right: 0;
-      width: 100d%;
-      height: 25%;
+      width: 100%;
       z-index: 999;
       display: flex;
       align-items: center;
@@ -343,29 +306,27 @@ st.markdown(
       padding: 8px 50px;
       box-sizing: border-box;
       border-radius: 0 0 12px 12px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
       transition: background-color 200ms ease, color 200ms ease;
-      background: var(--ivrot-bg) !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
       overflow: visible !important;
     }
 
     .ivrot-left { display:flex; align-items:center; gap:16px; min-width:40px; }
-    .ivrot-left img { height:200px; width:auto; display:block; }
+    .ivrot-left img { height:56px; width:auto; display:block; }
 
-    .ivrot-center { display:flex; flex-direction:column; align-items:left; gap:5px; flex:1 1 auto; }
-    .ivrot-title { font-weight:800; font-size:50px; margin:0; color:var(--ivrot-text) !important; }
-    .ivrot-subtitle { font-size:30px; margin:0; opacity:0.85; color:var(--ivrot-text) !important; }
+    .ivrot-center { display:flex; flex-direction:column; align-items:flex-start; gap:5px; flex:1 1 auto; }
+    .ivrot-title { font-weight:800; font-size:28px; margin:0; color:var(--ivrot-text) !important; }
+    .ivrot-subtitle { font-size:14px; margin:0; opacity:0.95; color:var(--ivrot-text) !important; }
 
     .ivrot-nav-row {
       display:flex;
-      background: var(--ivrot-bg) !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
-      flex-direction:column;
-      gap:16px; /* increased gap between buttons */
+      flex-direction:row;
+      gap:10px;
       align-items:center;
-      margin-top:20px; /* lowered buttons below header */
-      transform: translateY(40px); /* move buttons lower */
+      margin-top:10px;
       transition: transform 160ms ease;
       pointer-events: auto;
     }
@@ -373,21 +334,21 @@ st.markdown(
     .ivrot-nav-row button,
     .stButton > button,
     div.stButton > button {
-      background: var(--ivrot-bg) !important;
+      background: rgba(255,255,255,0.06) !important;
       color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-border) !important;
-      padding: 14px 24px !important; /* bigger buttons */
-      border-radius: 12px !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+      padding: 10px 18px !important;
+      border-radius: 10px !important;
       font-weight:700 !important;
       cursor:pointer !important;
-      font-size:18px !important; /* larger text */
+      font-size:14px !important;
       transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease !important;
     }
 
     .ivrot-nav-row button:hover,
     .stButton > button:hover,
     div.stButton > button:hover {
-      transform: translateY(-2px) !important;
+      transform: translateY(-1px) !important;
       box-shadow: var(--ivrot-hover-shadow) !important;
     }
 
@@ -395,32 +356,32 @@ st.markdown(
     .stButton > button[data-active="true"],
     div.stButton > button[data-active="true"] {
       box-shadow: none !important;
-      background: var(--ivrot-bg) !important;
+      background: rgba(255,255,255,0.08) !important;
       color: var(--ivrot-text) !important;
       border-width: 2px !important;
     }
 
     .ivrot-right button {
-      background: var(--ivrot-bg) !important; 
+      background: transparent !important; 
       border: none !important;
-      font-size:20px !important;
+      font-size:16px !important;
       cursor:pointer !important;
       padding:8px !important;
       border-radius:8px !important;
       color: var(--ivrot-text) !important;
       font-weight:700 !important;
     }
-    .ivrot-right button:hover { background: rgba(0,0,0,0.06) !important; }
+    .ivrot-right button:hover { background: rgba(255,255,255,0.04) !important; }
 
     @media (max-width: 800px) {
-      .ivrot-left img { height:64px; }
+      .ivrot-left img { height:40px; }
       .ivrot-title { font-size:16px; }
-      .ivrot-nav-row { margin-top:10px; transform: translateY(24px); }
-      .ivrot-nav-row button { padding:10px 16px; font-size:16px; }
-      .ivrot-header { padding:10px 14px; }
+      .ivrot-nav-row { margin-top:8px; transform: translateY(8px); }
+      .ivrot-nav-row button { padding:8px 12px; font-size:13px; }
+      .ivrot-header { padding:8px 12px; }
     }
 
-    /* Sidebar theming: ensure all form controls and labels match theme variables */
+    /* Sidebar theming: ensure form controls and labels visible on the background image */
     div[data-testid="stSidebar"] * {
       color: var(--ivrot-text) !important;
     }
@@ -433,34 +394,42 @@ st.markdown(
     div[data-testid="stSidebar"] .stSelectbox>div>div,
     div[data-testid="stSidebar"] .stSlider>div,
     div[data-testid="stSidebar"] .stSlider>div label {
-      background: var(--ivrot-bg) !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-text) !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
       box-shadow: none !important;
     }
 
-    /* Make sure dropdown arrow and selected value area also follow theme */
     div[data-testid="stSidebar"] .stSelectbox select,
     div[data-testid="stSidebar"] .stSelectbox div[role="listbox"],
     div[data-testid="stSidebar"] .stSelectbox .st-bg {
-      background: var(--ivrot-bg) !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-text) !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
     }
 
-    /* Labels, helper text and slider titles in sidebar */
     div[data-testid="stSidebar"] label,
     div[data-testid="stSidebar"] .css-1adrfps,
     div[data-testid="stSidebar"] .css-1v3fvcr {
       color: var(--ivrot-text) !important;
     }
 
-    /* Ensure buttons in sidebar also match theme */
     div[data-testid="stSidebar"] .stButton > button,
     div[data-testid="stSidebar"] button {
-      background: var(--ivrot-bg) !important;
+      background: rgba(255,255,255,0.06) !important;
       color: var(--ivrot-text) !important;
-      border: 1px solid var(--ivrot-text) !important;
+      border: 1px solid rgba(255,255,255,0.12) !important;
+    }
+
+    /* Make text white when background is transparent */
+    .ivrot-header,
+    .ivrot-title,
+    .ivrot-subtitle,
+    .ivrot-nav-row,
+    .ivrot-left img,
+    .ivrot-right,
+    div[data-testid="stSidebar"] {
+      color: var(--ivrot-text) !important;
     }
 
     </style>
@@ -468,16 +437,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown(set_dark_script, unsafe_allow_html=True)
+# No JS to toggle dark class — removed theme toggle entirely so Streamlit default applies.
 
-# --- Feedback box solid background (white in light theme, dark in dark theme) ---
-# Build CSS via concatenation so literal braces don't get parsed by Python format/f-strings.
-if st.session_state.get('theme_flag', 0) == 0:
-    fb_bg = "#ffffff"
-    fb_text = "#0f1724"
-else:
-    fb_bg = "#0b1220"
-    fb_text = "#f8fafc"
+# --- Feedback box solid background (use transparent + white text) ---
+fb_bg = "transparent"
+fb_text = "#ffffff"
 
 feedback_css = (
     "<style>\n"
@@ -489,8 +453,8 @@ feedback_css = (
     ".st-expander,\n"
     ".stExpanderHeader,\n"
     ".stExpanderContent {\n"
-    "  background: var(--ivrot-bg) !important;\n"
-    "  color: var(--ivrot-text) !important;\n"
+    "  background: transparent !important;\n"
+    "  color: var(--ivrot-feedback-text) !important;\n"
     "  padding: 12px 14px !important;\n"
     "  border-radius: 10px !important;\n"
     "  box-shadow: none !important;\n"
@@ -499,12 +463,12 @@ feedback_css = (
     "div[data-testid=\"stExpander\"] input,\n"
     ".stExpander textarea,\n"
     ".stExpander input {\n"
-    "  color: var(--ivrot-text) !important;\n"
-    "  background: var(--ivrot-bg) !important;\n"
+    "  color: var(--ivrot-feedback-text) !important;\n"
+    "  background: transparent !important;\n"
     "}\n"
     "div[data-testid=\"stExpander\"] .stButton > button,\n"
     ".stExpander .stButton > button {\n"
-    "  color: var(--ivrot-text) !important;background: var(--ivrot-bg) !important;\n  border-color: var(--ivrot-text) !important;\n"
+    "  color: var(--ivrot-feedback-text) !important;background: transparent !important;\n  border-color: var(--ivrot-feedback-text) !important;\n"
     "}\n"
     "</style>\n"
 )
@@ -513,8 +477,9 @@ st.markdown(feedback_css, unsafe_allow_html=True)
 
 
 # ---------- Header HTML ----------
-logo_uri = logo_light_uri if st.session_state["theme_flag"] == 0 else logo_dark_uri
-logo_html = f'<img src="{logo_uri}" alt="IVROT logo">' if logo_uri else "<div style='font-weight:800'>IVROT</div>"
+# Use light logo if present; we picked a single logo since no theme toggle exists.
+logo_uri = logo_light_uri or logo_dark_uri or ""
+logo_html = f'<img src="{logo_uri}" alt="IVROT logo">' if logo_uri else "<div style='font-weight:800;color:white'>IVROT</div>"
 
 st.markdown(
     f"""
@@ -536,7 +501,7 @@ st.markdown(
 # ---------- Header Buttons ----------
 c1, c2, c3 = st.columns([1,4,1])
 with c2:
-    # create 4 nav buttons in the center
+    # create 4 nav buttons in the center (no theme toggle)
     col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([1,1,1,1])
     with col_nav1:
         if st.button("HOME", key="nav_home"):
@@ -551,17 +516,7 @@ with c2:
         if st.button("SHIP DATA", key="nav_shipdata"):
             st.session_state["nav"] = "SHIP DATA"
 
-with c3:
-    icon = "☼" if st.session_state["theme_flag"] == 0 else "☽"
-    if st.button(icon, key="theme_toggle_btn"):
-        toggle_theme_flag()
-        if st.session_state["theme_flag"] == 1:
-            st.markdown("<script>document.documentElement.classList.add('dark')</script>", unsafe_allow_html=True)
-        else:
-            st.markdown("<script>document.documentElement.classList.remove('dark')</script>", unsafe_allow_html=True)
-
 # ---------- Active button highlight ----------
-# Build JS string by concatenation so Python does not try to parse JS braces.
 active = st.session_state["nav"]
 js_str = (
     "<script>"
@@ -592,7 +547,7 @@ if st.session_state["nav"] == "HOME":
 )
     st.markdown(
     """
-    <div style="font-size:20px; font-weight:700; line-height:1.5;">
+    <div style="font-size:20px; font-weight:700; line-height:1.5; color: white;">
         <b>IVROT (Integrated Vessel Route Optimisation Toolkit)</b> helps maritime professionals plan and optimize vessel routes efficiently, reducing fuel use and enhancing safety.
         <br><br>
         <b>Key Features:</b><br>
@@ -772,7 +727,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             phi1,phi2=math.radians(lat1),math.radians(lat2)
             dphi=math.radians(lat2-lat1)
             dlambda=math.radians(lon2-lon1)
-            a=math.sin(dphi/2)*2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)*2
+            a=math.sin(dphi/2.0)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2.0)**2
             c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
             return R*c
         total_distance_km=0
@@ -910,7 +865,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
 
     # --- Feedback expander handling (non-transparent) ---
     if st.session_state.get("open_feedback", False):
-        # Use expander (non-transparent) for feedback UI
+        # Use expander (transparent) for feedback UI
         with st.expander("Voyage Feedback", expanded=True):
             st.write("Please provide your feedback for this voyage. If you close without submitting, the default rating/text will remain.")
             with st.form("feedback_form"):
@@ -935,7 +890,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             phi1,phi2=math.radians(lat1),math.radians(lat2)
             dphi=math.radians(lat2-lat1)
             dlambda=math.radians(lon2-lon1)
-            a=math.sin(dphi/2)*2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)*2
+            a=math.sin(dphi/2.0)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2.0)**2
             c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
             return R*c
         total_distance_km=0
@@ -992,7 +947,8 @@ elif st.session_state["nav"] == "SHIP DATA":
             if submitted:
                 try:
                     df_new = st.session_state.get("ship_df", res_df).copy()
-                    df_new = df_new.append(new_vals, ignore_index=True)
+                    # use concat instead of deprecated append
+                    df_new = pd.concat([df_new, pd.DataFrame([new_vals])], ignore_index=True)
                     if save_ship_df(df_new):
                         st.success("New ship saved to ship_data.csv")
                         st.session_state["ship_df"] = df_new
