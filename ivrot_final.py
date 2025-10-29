@@ -1077,10 +1077,11 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
         st_folium(m2, width="100%", height=600, key="final_map")
 
     # -----------------------
-    # Buttons: Resistance curve & Feedback
+    # Buttons:Resistance curve,DP Feedback
     # -----------------------
     if st.session_state.get("route_generated", False):
-        col_a, col_b = st.columns([1, 1])
+        col_a, col_b, col_c = st.columns([1, 1, 1])
+
         with col_a:
             if st.button("Show Resistance Curve", key="show_res_btn"):
                 st.session_state["show_res"] = True
