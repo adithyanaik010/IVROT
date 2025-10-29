@@ -596,7 +596,7 @@ if st.session_state["nav"] == "HOME":
 
     st.markdown("<div style='height:400px'></div>", unsafe_allow_html=True)
 
-# ---------- NAVIGATION PAGE ----------
+# ---------- NEW TRAJECTORY PAGE ----------
 if st.session_state.get("nav") == "NEW TRAJECTORY":
     st.header("New Trajectory (Up/Down segments + Dense clusters)")
 
@@ -1085,6 +1085,9 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
             if st.button("Show Resistance Curve", key="show_res_btn"):
                 st.session_state["show_res"] = True
         with col_b:
+            if st.button("Display Parameters", key="display_params_btn"):
+                st.session_state["display_params"] = True
+        with col_c:
             if st.button("Feedback", key="feedback_btn"):
                 st.session_state["open_feedback"] = True
 
@@ -1150,6 +1153,16 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
                         except Exception as e:
                             st.error(f"Failed to update feedback: {e}")
                     st.session_state['open_feedback'] = False
+    if st.session_state.get("display_params", False):
+        html_path = Path("hotspots_opacity_map_fixed.html").resolve()
+        if html_path.exists():
+            # Open HTML file in a new browser tab
+            webbrowser.open_new_tab(f"file://{html_path}")
+            st.success("✅ Map opened in a new browser tab!")
+        else:
+            st.error("❌ The HTML file was not found. Please make sure it's in the same directory.")
+    else:
+        st.info("Click **Open Map in New Tab** to view the map.")
 
     # -----------------------
     # Sidebar summary (unchanged)
