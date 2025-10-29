@@ -279,15 +279,15 @@ if "ship_editor_state" not in st.session_state:
     st.session_state["ship_editor_state"] = {"mode": None}
 
 # ---------- Inject CSS (transparent + white text where background transparent) ----------
-root_vars = """
-:root {
-  --ivrot-bg: transparent;
-  --ivrot-text: #ffffff;
-  --ivrot-border: rgba(255,255,255,0.08);
-  --ivrot-hover-shadow: 0 8px 18px rgba(255,255,255,0.04);
-}
-"""
 
+root_vars = """
+    :root {
+      --ivrot-bg: #ffffff;
+      --ivrot-text: #0f1724;
+      --ivrot-border: rgba(2,6,23,0.06);
+      --ivrot-hover-shadow: 0 8px 18px rgba(2,6,23,0.06);
+    }
+    """
 # Use a single f-string only where safe (root_vars inserted); other large CSS blocks will be concatenated to avoid brace parsing.
 st.markdown(
     "<style>\n" + root_vars + """
