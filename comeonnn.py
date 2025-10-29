@@ -281,7 +281,7 @@ if "ship_editor_state" not in st.session_state:
 # ---------- Inject CSS (transparent + white text where background transparent) ----------
 root_vars = """
 :root {
-  --ivrot-bg: transparent;
+  --ivrot-bg: #0f1724;
   --ivrot-text: #ffffff;
   --ivrot-border: rgba(255,255,255,0.08);
   --ivrot-hover-shadow: 0 8px 18px rgba(255,255,255,0.04);
