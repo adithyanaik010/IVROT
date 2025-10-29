@@ -20,6 +20,11 @@ import csv
 
 import time
 
+import streamlit as st
+import base64
+import time
+from pathlib import Path
+
 # -------------------------------
 # CONFIG
 # -------------------------------
@@ -31,29 +36,17 @@ st.set_page_config(page_title="IVROT", layout="wide")
 # -------------------------------
 # FUNCTION TO EMBED VIDEO
 # -------------------------------
-# -------------------------------
-# INTRO VIDEO (robust auto-remove + Skip button)
-# -------------------------------
-def embed_intro_video_auto_remove(video_path, duration_sec=12):
-    """
-    Embed a full-screen base64 video overlay that:
-      - Attempts to autoplay,
-      - Removes itself on 'ended' or when currentTime reaches duration,
-      - Provides a visible 'Skip' button so user can close it manually,
-      - Removes itself after (duration_sec + 2s) fallback.
-    """
+def embed_intro_video(video_path):
+    """Play intro video full-screen once."""
     try:
         video_bytes = Path(video_path).read_bytes()
-        b64 = base64.b64encode(video_bytes).decode()
-    except Exception:
-        # If file missing or unreadable, just skip showing intro.
+    except FileNotFoundError:
+        st.error(f"❌ Video not found: {video_path}")
         return
 
-    # Fallback timeout (duration + 2s) in ms
-    fallback_ms = int(duration_sec * 1000 + 2000)
-
+    b64 = base64.b64encode(video_bytes).decode()
     html = f"""
-    <div id="ivrot_intro_overlay" style="
+    <div style="
         position:fixed;
         top:0; left:0;
         width:100%; height:100%;
@@ -61,77 +54,13 @@ def embed_intro_video_auto_remove(video_path, duration_sec=12):
         display:flex;
         justify-content:center;
         align-items:center;
-        z-index:99999;">
-        <video id="ivrot_intro_video" autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;">
+        z-index:9999;">
+        <video autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;">
             <source src="data:video/mp4;base64,{b64}" type="video/mp4">
-            Your browser does not support the video tag.
         </video>
-        <button id="ivrot_skip_btn" style="
-            position: fixed;
-            top: 18px;
-            right: 18px;
-            z-index:100000;
-            background: rgba(255,255,255,0.12);
-            color: white;
-            border: none;
-            padding: 10px 14px;
-            font-weight: 700;
-            border-radius: 8px;
-            cursor: pointer;
-        ">Skip Intro</button>
     </div>
-
-    <script>
-    (function() {{
-      const vid = document.getElementById('ivrot_intro_video');
-      const overlay = document.getElementById('ivrot_intro_overlay');
-      const skipBtn = document.getElementById('ivrot_skip_btn');
-
-      function removeOverlay() {{
-        try {{
-          if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-        }} catch (e) {{ /* ignore */ }}
-      }}
-
-      // Remove when video ends
-      if (vid) {{
-        vid.addEventListener('ended', removeOverlay, false);
-
-        // If metadata isn't loaded yet, 'duration' may be NaN; use timeupdate to detect near-end
-        vid.addEventListener('timeupdate', function() {{
-          try {{
-            if (vid.duration && (vid.currentTime >= (vid.duration - 0.25))) {{
-              removeOverlay();
-            }}
-          }} catch(e) {{ /* ignore */ }}
-        }});
-
-        // Try to play (some browsers may block autoplay); ignore errors
-        try {{
-          vid.play().catch(function(){{
-            /* autoplay blocked; user can press Skip */
-          }});
-        }} catch (e) {{
-          /* ignore */
-        }}
-      }}
-
-      // Skip button
-      if (skipBtn) {{
-        skipBtn.addEventListener('click', removeOverlay, false);
-      }}
-
-      // Fallback timeout to remove overlay if events don't fire (autoplay blocked or other)
-      setTimeout(removeOverlay, {fallback_ms});
-    }})();
-    </script>
     """
     st.markdown(html, unsafe_allow_html=True)
-
-# Show intro once (non-blocking), then set flag so it won't show again
-if "intro_played" not in st.session_state:
-    embed_intro_video_auto_remove(INTRO_VIDEO, duration_sec=VIDEO_DURATION)
-    st.session_state["intro_played"] = True
 
 
 # ------------------ CUSTOM CSS ------------------
