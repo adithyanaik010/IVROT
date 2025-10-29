@@ -601,7 +601,11 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
     st.header("New Trajectory")
 
     # --- Trajectory session state ---
-    # (start/end/route/clusters initialized earlier)
+    # (start/end/route/clusters/waypoints/land already initialized earlier)
+
+    # Ensure we have last_map_click to avoid duplicate appends across reruns
+    if "last_map_click" not in st.session_state:
+        st.session_state["last_map_click"] = None  # stores (lat, lon) of last processed click
 
     # --- Sidebar for NEW TRAJECTORY ---
     with st.sidebar.expander("Route Points & Ship"):
@@ -626,11 +630,15 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         generate = st.button("Generate Route")
 
         # ---- SYNC manual sidebar coords into session_state so Generate works even without map clicks ----
-        # (minimal and safe: only set if user provided non-zero values)
         if (start_lat != 0.0 or start_lon != 0.0):
             st.session_state.start = [start_lat, start_lon]
+            # also seed waypoints if empty so user can use manual coords
+            if not st.session_state.waypoints:
+                st.session_state.waypoints = [(start_lat, start_lon)]
         if (end_lat != 0.0 or end_lon != 0.0):
             st.session_state.end = [end_lat, end_lon]
+            if not st.session_state.waypoints:
+                st.session_state.waypoints = [(start_lat, start_lon), (end_lat, end_lon)]
 
     if reset:
         st.session_state.start = [None, None]
@@ -643,8 +651,9 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.session_state["voyage_timestamp"] = None
         st.session_state["feedback_rating"] = 3
         st.session_state["feedback_text"] = "Average: Routine voyage with some manageable issues."
-        # Clear user waypoints as well
+        # Clear user waypoints and last click state as well
         st.session_state.waypoints = []
+        st.session_state.last_map_click = None
 
     # --- Map for selecting points ---
     map_container = st.container()
@@ -673,13 +682,15 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
 
     # NEW: collect multiple clicks as waypoints (first is start, last is end)
     if map_click and map_click.get("last_clicked"):
-        lat = map_click["last_clicked"]["lat"]
-        lon = map_click["last_clicked"]["lng"]
-        if is_water(lat, lon):
-            wp = (lat, lon)
-            # append only if new (avoid repeated identical clicks)
-            if wp not in st.session_state.waypoints:
-                st.session_state.waypoints.append(wp)
+        lat = round(float(map_click["last_clicked"]["lat"]), 6)
+        lon = round(float(map_click["last_clicked"]["lng"]), 6)
+        this_click = (lat, lon)
+        # only process if new (protect against repeated reruns returning the same click)
+        if st.session_state.last_map_click != this_click:
+            st.session_state.last_map_click = this_click
+            if is_water(lat, lon):
+                # append waypoint (allowing many waypoints in order)
+                st.session_state.waypoints.append(this_click)
                 # update start/end session entries to reflect clicked waypoints
                 if st.session_state.waypoints:
                     st.session_state.start = [st.session_state.waypoints[0][0], st.session_state.waypoints[0][1]]
@@ -689,7 +700,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
     if generate:
         # If user provided waypoints by clicks, prefer them (first click start, last click end)
         if st.session_state.waypoints and len(st.session_state.waypoints) >= 2:
-            # use clicked waypoints as the route
+            # use clicked waypoints as the route (keep order clicked)
             st.session_state.route = [(float(lat), float(lon)) for lat, lon in st.session_state.waypoints]
         # fallback to previous two-point behavior if no waypoints collected but start/end present
         elif st.session_state.start != [None,None] and st.session_state.end != [None,None]:
@@ -821,159 +832,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                     st.session_state["voyage_saved"] = True
                 except Exception as e:
                     st.error(f"Failed to save voyage: {e}")
-
-    # --- Final Map with route & clusters ---
-    map_container2 = st.container()
-    with map_container2:
-        m2 = folium.Map(location=[20.5937,78.9629], zoom_start=5, tiles="CartoDB positron")
-        # show waypoints markers if available else fallback
-        if st.session_state.waypoints:
-            for idx, (lat, lon) in enumerate(st.session_state.waypoints):
-                if idx == 0:
-                    icon = folium.Icon(color="green")
-                    popup = f"Start (WP {idx+1})"
-                elif idx == len(st.session_state.waypoints)-1:
-                    icon = folium.Icon(color="red")
-                    popup = f"End (WP {idx+1})"
-                else:
-                    icon = folium.Icon(color="blue")
-                    popup = f"WP {idx+1}"
-                folium.Marker([lat, lon], popup=popup, icon=icon).add_to(m2)
-        else:
-            if st.session_state.start != [None,None]:
-                folium.Marker(st.session_state.start, popup="Start", icon=folium.Icon(color="green")).add_to(m2)
-            if st.session_state.end != [None,None]:
-                folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m2)
-
-        if st.session_state.route:
-            folium.PolyLine(st.session_state.route, color="blue", weight=3).add_to(m2)
-        if st.session_state.clusters:
-            for point in st.session_state.clusters:
-                total = point["wave"]+point["wind"]+point["current"]
-                tooltip_text=f"Wave: {point['wave']} | Wind: {point['wind']} | Current: {point['current']} (Total: {total}/300)"
-                folium.CircleMarker(location=[point["lat"],point["lon"]],
-                                    radius=2,color="green",fill=True,fill_opacity=0.6,
-                                    tooltip=tooltip_text).add_to(m2)
-        st_folium(m2, width="100%", height=600, key="final_map")
-
-    # --- BUTTONS: Show Resistance Curve & Feedback (appears only after generation) ---
-    if st.session_state.get("route_generated", False):
-        col_a, col_b = st.columns([1,1])
-        with col_a:
-            if st.button("Show Resistance Curve", key="show_res_btn"):
-                st.session_state["show_res"] = True
-        with col_b:
-            if st.button("Feedback", key="feedback_btn"):
-                st.session_state["open_feedback"] = True
-
-    # If user asked to show resistance curve, compute & display it
-    if st.session_state.get("show_res", False):
-        # try to find matching ship row by ship_type value
-        try:
-            ship_df_local = st.session_state.get("ship_df", res_df)
-            # match ignoring case and whitespace
-            mask = ship_df_local['ShipType'].astype(str).str.strip().str.upper() == str(ship_type).strip().upper()
-            ship_row = None
-            if mask.any():
-                ship_row = ship_df_local[mask].iloc[0]
-            else:
-                # fallback: try match by contains or first row
-                contains_mask = ship_df_local['ShipType'].astype(str).str.strip().str.upper().str.contains(str(ship_type).strip().upper())
-                if contains_mask.any():
-                    ship_row = ship_df_local[contains_mask].iloc[0]
-                else:
-                    ship_row = ship_df_local.iloc[0]
-
-            speeds_knots = np.linspace(0.1, 25, 100)
-            speeds_ms = speeds_knots * 0.514444
-
-            total_resistance = []
-            # choose model based on LWL / LPP availability
-            LWL_val = ship_row.get('LWL', ship_row.get('LPP', 0))
-            try:
-                LWL_num = float(LWL_val)
-            except Exception:
-                LWL_num = 0
-
-            if LWL_num > 100:
-                for v_ms in speeds_ms:
-                    res = resistance_hol(
-                        float(ship_row.get('LPP', 0) or 0), float(ship_row.get('B', 0) or 0), float(ship_row.get('T', 0) or 0),
-                        v_ms, float(ship_row.get('rho', 1025) or 1025), float(ship_row.get('nu', 1.19e-6) or 1.19e-6),
-                        float(ship_row.get('CB', 0) or 0), float(ship_row.get('S', 0) or 0), float(ship_row.get('lcb', 0) or 0),
-                        ship_row.get('CWP', 0), ship_row.get('Cp', 0), ship_row.get('Cm', 0), ship_row.get('ABT', 0), ship_row.get('hB', 0),
-                        ship_row.get('AT', 0), ship_row.get('Cstern', 0), ship_row.get('iE', 0), ship_row.get('dCF', 0)
-                    )
-                    total_resistance.append(res['Rt'])
-            else:
-                for v_ms in speeds_ms:
-                    res = resistance_van(
-                        float(ship_row.get('LWL', 0) or 0), float(ship_row.get('B', 0) or 0), float(ship_row.get('T', 0) or 0),
-                        v_ms, float(ship_row.get('rho', 1025) or 1025), float(ship_row.get('nu', 1.19e-6) or 1.19e-6),
-                        float(ship_row.get('nabla', 0) or 0), float(ship_row.get('S', 0) or 0), float(ship_row.get('Cp', 0) or 0), float(ship_row.get('k2_factor', 0) or 0)
-                    )
-                    total_resistance.append(res['Rt'])
-
-            # Plot and display in Streamlit (inline)
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.plot(speeds_knots, np.array(total_resistance) / 1000, marker='o', linestyle='-', markersize=4)
-            ax.set_title(f"Total resistance vs speed for {int(LWL_num) if LWL_num else 'N/A'} m {ship_row.get('ShipType','')}")
-            ax.set_xlabel('Speed (kn)')
-            ax.set_ylabel('Total resistance (kN)')
-            ax.grid(True, which='major', linestyle='--', linewidth=0.5)
-            ax.minorticks_on()
-            st.subheader("Resistance plot for selected ship")
-            st.pyplot(fig)
-            plt.close(fig)
-
-        except Exception as e:
-            st.warning(f"Could not generate resistance plot: {e}")
-
-    # --- Feedback expander handling (non-transparent) ---
-    if st.session_state.get("open_feedback", False):
-        # Use expander (transparent) for feedback UI
-        with st.expander("Voyage Feedback", expanded=True):
-            st.write("Please provide your feedback for this voyage. If you close without submitting, the default rating/text will remain.")
-            with st.form("feedback_form"):
-                rating = st.slider("Rating (1-5)", min_value=1, max_value=5, value=st.session_state.get('feedback_rating',3))
-                text = st.text_area("Feedback text", value=st.session_state.get('feedback_text', "Average: Routine voyage with some manageable issues."), height=150)
-                submitted = st.form_submit_button("Submit Feedback")
-                if submitted:
-                    st.session_state['feedback_rating'] = int(rating)
-                    st.session_state['feedback_text'] = text.strip() if text.strip() else "Average: Routine voyage with some manageable issues."
-                    # update CSV entry for this voyage timestamp
-                    if st.session_state.get('voyage_timestamp'):
-                        success = update_feedback_in_csv(CSV_PATH, st.session_state['voyage_timestamp'], st.session_state['feedback_rating'], st.session_state['feedback_text'])
-                        if success:
-                            st.success("Thank you — your feedback has been saved.")
-                    st.session_state['open_feedback'] = False
-
-    # --- Distance & ETA display in sidebar ---
-    if st.session_state.route:
-        # recompute distances (as above)
-        def haversine(lat1, lon1, lat2, lon2):
-            R=6371.0
-            phi1,phi2=math.radians(lat1),math.radians(lat2)
-            dphi=math.radians(lat2-lat1)
-            dlambda=math.radians(lon2-lon1)
-            a=math.sin(dphi/2.0)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2.0)**2
-            c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
-            return R*c
-        total_distance_km=0
-        for i in range(len(st.session_state.route)-1):
-            lat1,lon1=st.session_state.route[i]
-            lat2,lon2=st.session_state.route[i+1]
-            total_distance_km+=haversine(lat1,lon1,lat2,lon2)
-        total_distance_nm=total_distance_km/1.852
-        hours_needed=total_distance_nm/ship_speed_knots
-        etd=datetime.combine(start_date,datetime.min.time())
-        eta=etd+timedelta(hours=hours_needed)
-        st.sidebar.markdown("### Voyage Info")
-        st.sidebar.write(f"*Ship Type:* {ship_type}")
-        st.sidebar.write(f"*Distance:* {total_distance_nm:.1f} NM ({total_distance_km:.1f} km)")
-        st.sidebar.write(f"*ETD:* {etd.strftime('%Y-%m-%d %H:%M')}")
-        st.sidebar.write(f"*ETA:* {eta.strftime('%Y-%m-%d %H:%M')}")
-        st.sidebar.write(f"*Duration:* {hours_needed:.1f} hrs")
 
 # ---------- SHIP DATA PAGE ----------
 elif st.session_state["nav"] == "SHIP DATA":
