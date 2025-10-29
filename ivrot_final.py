@@ -1157,16 +1157,17 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
 
     
     if st.session_state.get("display_params", False):
-        html_path = "hotspots_opacity_map_fixed.html"
+        # Path to HTML
+        html_path = Path("hotspots_opacity_map_fixed.html").resolve()
+        
+        st.header("Map Viewer")
+        
         if html_path.exists():
-            # Open HTML file in a new browser tab
-            webbrowser.open_new_tab(f"file://{html_path}")
-            st.success("✅ Map open new browser tab!")
+            if st.button("Open Map in New Tab"):
+                # Use a clickable link instead of webbrowser
+                st.markdown(f"[Click here to open the map](file://{html_path})", unsafe_allow_html=True)
         else:
-            st.error("❌ The HTML file was not found. Please make sure it's in the same directory.")
-    else:
-        st.info("***The Route has been Generated***")
-
+            st.error("❌ The HTML file was not found.")
     # -----------------------
     # Sidebar summary (unchanged)
     # -----------------------
