@@ -74,15 +74,20 @@ logo_dark_uri = file_to_data_uri(logo_dark_path) if logo_dark_path.exists() else
 ico_uri = file_to_data_uri(ICO_PATH) if ICO_PATH.exists() else ""
 
 # -----------------------------
-# --- Resistance utilities (MINIMAL ADDITION) ---
+# --- Resistance utilities (FIXED) ---
 # -----------------------------
 def resistance_hol(Lpp, B, T, V, rho, nu, Cb, S, lcb, Cwp, Cp, Cm, Abt, hb, At, Cstern, iE, dCF):
+    # Reynolds, frictional coefficient
     Re = V * Lpp / nu if nu and Lpp else 0.0
     Cf = 0.075 / ((np.log10(Re) - 2) ** 2) if Re > 0 else 0.0
     k1 = 1 + 0.15 * (Cb if not pd.isna(Cb) else 0.0)
     Rf = 0.5 * rho * V**2 * S * Cf * k1
+
+    # Residual/additional form/resistance (empirical)
     Fn = V / np.sqrt(9.81 * Lpp) if Lpp > 0 else 0.0
-    Rr = 0.5 * rho * V**2 * S * (0.004 + 0.002 * (Cb if not pd.isna(Cb) else 0.0)**2) * (1 + 0.6 * np.exp(-((Fn - 0.25)/0.05)**2))
+    Cb_val = (Cb if not pd.isna(Cb) else 0.0)
+    # corrected squaring and exponential square usage
+    Rr = 0.5 * rho * V**2 * S * (0.004 + 0.002 * Cb_val**2) * (1 + 0.6 * np.exp(-((Fn - 0.25) / 0.05) ** 2))
 
     Rt = Rf + Rr
     return {'Rt': Rt, 'Rf': Rf, 'Rr': Rr}
@@ -90,10 +95,14 @@ def resistance_hol(Lpp, B, T, V, rho, nu, Cb, S, lcb, Cwp, Cp, Cm, Abt, hb, At, 
 def resistance_van(LWL, B, T, V, rho, nu, nabla, S, Cp, k2_factor):
     g = 9.81
     Rn = V * LWL / nu if nu and LWL else 0.0
-    Cf = 0.075 / (np.log10(Rn) - 2)**2 if Rn > 0 else 0.0
+    Cf = 0.075 / ((np.log10(Rn) - 2) ** 2) if Rn > 0 else 0.0
     Rf = 0.5 * rho * S * V**2 * (Cf + (k2_factor if not pd.isna(k2_factor) else 0.0))
+
     Fn = V / np.sqrt(g * LWL) if LWL > 0 else 0.0
-    Rr = (1.1 + 0.3 * (Cp if not pd.isna(Cp) else 0.0)) * (Fn*2 / (0.32 + Fn2)) * 0.5 * rho * g * ((nabla*(2/3)) if nabla and nabla > 0 else 0.0)
+    Cp_val = (Cp if not pd.isna(Cp) else 0.0)
+    # corrected Fn squared use
+    Rr = (1.1 + 0.3 * Cp_val) * (Fn**2 / (0.32 + Fn**2)) * 0.5 * rho * g * ((nabla * (2/3)) if nabla and nabla > 0 else 0.0)
+
     Rt = Rf + Rr
     return {'Rt': Rt, 'Rf': Rf, 'Rr': Rr}
 
@@ -248,7 +257,7 @@ if "ship_editor_state" not in st.session_state:
 def toggle_theme_flag():
     st.session_state["theme_flag"] = 1 if st.session_state["theme_flag"] == 0 else 0
 
-# ---------- Inject CSS ----------
+# ---------- Inject CSS (theme respects session_state each run) ----------
 if st.session_state["theme_flag"] == 0:
     root_vars = """
     :root {
@@ -258,7 +267,6 @@ if st.session_state["theme_flag"] == 0:
       --ivrot-hover-shadow: 0 8px 18px rgba(2,6,23,0.06);
     }
     """
-    set_dark_script = "<script>document.documentElement.classList.remove('dark')</script>"
 else:
     root_vars = """
     :root {
@@ -268,9 +276,7 @@ else:
       --ivrot-hover-shadow: 0 8px 18px rgba(248,250,252,0.04);
     }
     """
-    set_dark_script = "<script>document.documentElement.classList.add('dark')</script>"
 
-# Use a single f-string only where safe (root_vars inserted); other large CSS blocks will be concatenated to avoid brace parsing.
 st.markdown(
     "<style>\n" + root_vars + """
     /* background */
@@ -279,14 +285,14 @@ st.markdown(
       background-size: cover;
     }
 
-    /* Header (styles kept the same) */
+    /* Header (styles kept the same, small corrections) */
     .ivrot-header {
-      position:  flexible;  
+      position: relative;
       top: 25px;
       left: 0;
       right: 0;
-      width: 100d%;
-      height: 25%;
+      width: 100%;
+      height: auto;
       z-index: 999;
       display: flex;
       align-items: center;
@@ -302,21 +308,20 @@ st.markdown(
     }
 
     .ivrot-left { display:flex; align-items:center; gap:16px; min-width:40px; }
-    .ivrot-left img { height:200px; width:auto; display:block; }
+    .ivrot-left img { height:80px; width:auto; display:block; }
 
-    .ivrot-center { display:flex; flex-direction:column; align-items:left; gap:5px; flex:1 1 auto; }
-    .ivrot-title { font-weight:800; font-size:50px; margin:0; color:var(--ivrot-text) !important; }
-    .ivrot-subtitle { font-size:30px; margin:0; opacity:0.85; color:var(--ivrot-text) !important; }
+    .ivrot-center { display:flex; flex-direction:column; align-items:flex-start; gap:5px; flex:1 1 auto; }
+    .ivrot-title { font-weight:800; font-size:28px; margin:0; color:var(--ivrot-text) !important; }
+    .ivrot-subtitle { font-size:14px; margin:0; opacity:0.85; color:var(--ivrot-text) !important; }
 
     .ivrot-nav-row {
       display:flex;
       background: var(--ivrot-bg) !important;
       color: var(--ivrot-text) !important;
-      flex-direction:column;
-      gap:16px; /* increased gap between buttons */
+      flex-direction:row;
+      gap:16px;
       align-items:center;
-      margin-top:20px; /* lowered buttons below header */
-      transform: translateY(40px); /* move buttons lower */
+      margin-top:10px;
       transition: transform 160ms ease;
       pointer-events: auto;
     }
@@ -327,11 +332,11 @@ st.markdown(
       background: var(--ivrot-bg) !important;
       color: var(--ivrot-text) !important;
       border: 1px solid var(--ivrot-border) !important;
-      padding: 14px 24px !important; /* bigger buttons */
+      padding: 10px 16px !important;
       border-radius: 12px !important;
       font-weight:700 !important;
       cursor:pointer !important;
-      font-size:18px !important; /* larger text */
+      font-size:14px !important;
       transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, color 120ms ease, border-color 120ms ease !important;
     }
 
@@ -354,7 +359,7 @@ st.markdown(
     .ivrot-right button {
       background: var(--ivrot-bg) !important; 
       border: none !important;
-      font-size:20px !important;
+      font-size:16px !important;
       cursor:pointer !important;
       padding:8px !important;
       border-radius:8px !important;
@@ -364,10 +369,10 @@ st.markdown(
     .ivrot-right button:hover { background: rgba(0,0,0,0.06) !important; }
 
     @media (max-width: 800px) {
-      .ivrot-left img { height:64px; }
+      .ivrot-left img { height:48px; }
       .ivrot-title { font-size:16px; }
-      .ivrot-nav-row { margin-top:10px; transform: translateY(24px); }
-      .ivrot-nav-row button { padding:10px 16px; font-size:16px; }
+      .ivrot-nav-row { margin-top:8px; transform: translateY(12px); }
+      .ivrot-nav-row button { padding:8px 12px; font-size:12px; }
       .ivrot-header { padding:10px 14px; }
     }
 
@@ -419,10 +424,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown(set_dark_script, unsafe_allow_html=True)
-
 # --- Feedback box solid background (white in light theme, dark in dark theme) ---
-# Build CSS via concatenation so literal braces don't get parsed by Python format/f-strings.
 if st.session_state.get('theme_flag', 0) == 0:
     fb_bg = "#ffffff"
     fb_text = "#0f1724"
@@ -504,15 +506,12 @@ with c2:
 
 with c3:
     icon = "☼" if st.session_state["theme_flag"] == 0 else "☽"
+    # keep a stable key for the toggle button
     if st.button(icon, key="theme_toggle_btn"):
         toggle_theme_flag()
-        if st.session_state["theme_flag"] == 1:
-            st.markdown("<script>document.documentElement.classList.add('dark')</script>", unsafe_allow_html=True)
-        else:
-            st.markdown("<script>document.documentElement.classList.remove('dark')</script>", unsafe_allow_html=True)
+        # no client-side JS required — rerun will re-inject proper CSS based on session_state
 
 # ---------- Active button highlight ----------
-# Build JS string by concatenation so Python does not try to parse JS braces.
 active = st.session_state["nav"]
 js_str = (
     "<script>"
@@ -723,7 +722,8 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             phi1,phi2=math.radians(lat1),math.radians(lat2)
             dphi=math.radians(lat2-lat1)
             dlambda=math.radians(lon2-lon1)
-            a=math.sin(dphi/2)*2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)*2
+            # corrected haversine squaring
+            a=math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
             c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
             return R*c
         total_distance_km=0
@@ -886,7 +886,7 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
             phi1,phi2=math.radians(lat1),math.radians(lat2)
             dphi=math.radians(lat2-lat1)
             dlambda=math.radians(lon2-lon1)
-            a=math.sin(dphi/2)*2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)*2
+            a=math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
             c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
             return R*c
         total_distance_km=0
@@ -943,7 +943,8 @@ elif st.session_state["nav"] == "SHIP DATA":
             if submitted:
                 try:
                     df_new = st.session_state.get("ship_df", res_df).copy()
-                    df_new = df_new.append(new_vals, ignore_index=True)
+                    # avoid deprecated DataFrame.append, use .loc
+                    df_new.loc[len(df_new)] = new_vals
                     if save_ship_df(df_new):
                         st.success("New ship saved to ship_data.csv")
                         st.session_state["ship_df"] = df_new
