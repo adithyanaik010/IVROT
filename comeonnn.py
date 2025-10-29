@@ -7,7 +7,7 @@ from pathlib import Path
 # CONFIG
 # -------------------------------
 INTRO_VIDEO = "YouCut_20251028_153909796.mp4"  # your intro video file
-VIDEO_DURATION = 5  # seconds – adjust to your actual video length
+VIDEO_DURATION = 12  # seconds – adjust to your actual video length
 
 st.set_page_config(page_title="IVROT", layout="wide")
 
