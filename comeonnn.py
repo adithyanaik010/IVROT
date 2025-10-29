@@ -1,10 +1,10 @@
 import streamlit as st
-import time
 import base64
+import time
 from pathlib import Path
 
 # -------------------------------
-# CONFIGURATION
+# CONFIG
 # -------------------------------
 INTRO_VIDEO = "YouCut_20251028_153909796.mp4"
 LOOP_VIDEO = "IVROT_20251028_150435_0000-vmake.mp4"
@@ -12,69 +12,63 @@ LOOP_VIDEO = "IVROT_20251028_150435_0000-vmake.mp4"
 st.set_page_config(page_title="IVROT", layout="wide")
 
 # -------------------------------
-# UTILITY FUNCTIONS
+# VIDEO HELPERS
 # -------------------------------
 
-def play_video(video_path, autoplay=True, loop=False):
-    """Embed a video file into Streamlit using HTML for more control."""
-    video_bytes = Path(video_path).read_bytes()
+def embed_video(video_path, autoplay=True, loop=False, muted=True):
+    """Embed MP4 video using raw HTML so autoplay + loop work properly."""
+    try:
+        video_bytes = Path(video_path).read_bytes()
+    except FileNotFoundError:
+        st.error(f"❌ Video file not found: {video_path}")
+        return
+
     b64 = base64.b64encode(video_bytes).decode()
-    loop_attr = "loop" if loop else ""
-    auto_attr = "autoplay" if autoplay else ""
-    html = f"""
-    <video {auto_attr} {loop_attr} muted playsinline style="width:100%; height:100%; object-fit:cover;">
-        <source src="data:video/mp4;base64,{b64}" type="video/mp4">
-    </video>
+    auto = "autoplay" if autoplay else ""
+    loop_tag = "loop" if loop else ""
+    mute_tag = "muted" if muted else ""
+    html_code = f"""
+    <div style="position:fixed; top:0; left:0; width:100%; height:100%;
+                display:flex; justify-content:center; align-items:center;
+                background-color:black; z-index:9999;">
+        <video {auto} {loop_tag} {mute_tag} playsinline
+               style="width:100%; height:100%; object-fit:cover;">
+            <source src="data:video/mp4;base64,{b64}" type="video/mp4">
+        </video>
+    </div>
     """
-    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(html_code, unsafe_allow_html=True)
 
+# -------------------------------
+# INTRO SEQUENCE
+# -------------------------------
+if "intro_played" not in st.session_state:
+    st.session_state.intro_played = False
 
-def show_intro():
-    """Play intro video once."""
+if not st.session_state.intro_played:
+    # Play intro video full-screen
+    embed_video(INTRO_VIDEO, autoplay=True, loop=False)
     st.session_state.intro_played = True
-    play_video(INTRO_VIDEO, autoplay=True, loop=False)
-    time.sleep(3)  # Adjust to your video duration
-
-
-def show_loading():
-    """Show looping loading video."""
-    placeholder = st.empty()
-    with placeholder.container():
-        play_video(LOOP_VIDEO, autoplay=True, loop=True)
-    return placeholder
-
-
-def simulate_long_task(seconds=5):
-    """Example of background computation."""
-    time.sleep(seconds)
-
+    # Wait for video duration (adjust this to your actual video length)
+    time.sleep(5)
+    st.rerun()
 
 # -------------------------------
 # MAIN APP
 # -------------------------------
-
-# Initialize state
-if "intro_played" not in st.session_state:
-    st.session_state.intro_played = False
-
-# If intro hasn't been played, show it and stop here
-if not st.session_state.intro_played:
-    show_intro()
-    st.rerun()  # reload to show the main UI next
-
-# -------------------------------
-# MAIN UI AFTER INTRO
-# -------------------------------
-
 st.title("🌊 IVROT System Home Page")
+st.markdown("This is your main app after the intro video.")
 
-st.markdown("This is your main app interface after the intro video.")
-
-# Example button to simulate heavy background work
+# Example button to simulate a heavy process
 if st.button("Start Heavy Task"):
-    loading_placeholder = show_loading()  # show loop video
-    simulate_long_task(6)  # simulate heavy computation
-    loading_placeholder.empty()  # remove video once done
-    st.success("✅ Background task completed successfully!")
+    # Show loading animation in foreground
+    loading_placeholder = st.empty()
+    with loading_placeholder:
+        embed_video(LOOP_VIDEO, autoplay=True, loop=True)
+    # Simulate a heavy background process
+    time.sleep(7)
+    # Remove the looping video
+    loading_placeholder.empty()
+    st.success("✅ Task completed successfully!")
 
-st.write("You can continue using your app here...")
+st.write("Continue exploring your app below...")
