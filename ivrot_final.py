@@ -1157,11 +1157,11 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
 
     
     if st.session_state.get("display_params", False):
-        html_path = Path("hotspots_opacity_map_fixed.html").resolve()
+        html_path = "hotspots_opacity_map_fixed.html"
         if html_path.exists():
             # Open HTML file in a new browser tab
             webbrowser.open_new_tab(f"file://{html_path}")
-            st.success("✅ Map opened in a new browser tab!")
+            st.success("✅ Map open new browser tab!")
         else:
             st.error("❌ The HTML file was not found. Please make sure it's in the same directory.")
     else:
