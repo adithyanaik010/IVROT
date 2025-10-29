@@ -1165,9 +1165,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
         else:
             st.error("❌ The HTML file was not found. Please make sure it's in the same directory.")
     else:
-        st.info("Click Show Resistance to view the Resistance Curve of the Vessel
-        Click Display Prameters to view the parameters in New Tab
-        Click Feedback to enter the feedback")
+        st.info("***The Route has been Generated***")
 
     # -----------------------
     # Sidebar summary (unchanged)
