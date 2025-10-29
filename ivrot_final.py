@@ -1154,6 +1154,8 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
                         except Exception as e:
                             st.error(f"Failed to update feedback: {e}")
                     st.session_state['open_feedback'] = False
+
+    
     if st.session_state.get("display_params", False):
         html_path = Path("hotspots_opacity_map_fixed.html").resolve()
         if html_path.exists():
@@ -1163,7 +1165,9 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
         else:
             st.error("❌ The HTML file was not found. Please make sure it's in the same directory.")
     else:
-        st.info("Click **Open Map in New Tab** to view the map.")
+        st.info("Click Show Resistance to view the Resistance Curve of the Vessel
+        Click Display Prameters to view the parameters in New Tab
+        Click Feedback to enter the feedback")
 
     # -----------------------
     # Sidebar summary (unchanged)
