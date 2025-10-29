@@ -603,9 +603,9 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
     # --- Trajectory session state ---
     # (start/end/route/clusters/waypoints/land already initialized earlier)
 
-    # Ensure we have last_map_click to avoid duplicate appends across reruns
+    # Ensure last click tracker to avoid double-appending same click on rerun
     if "last_map_click" not in st.session_state:
-        st.session_state["last_map_click"] = None  # stores (lat, lon) of last processed click
+        st.session_state["last_map_click"] = None
 
     # --- Sidebar for NEW TRAJECTORY ---
     with st.sidebar.expander("Route Points & Ship"):
@@ -629,16 +629,17 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         reset = st.button("Reset Trajectory")
         generate = st.button("Generate Route")
 
-        # ---- SYNC manual sidebar coords into session_state so Generate works even without map clicks ----
-        if (start_lat != 0.0 or start_lon != 0.0):
+        # If user types start/end in sidebar and there are no waypoints yet, seed them
+        if (start_lat != 0.0 or start_lon != 0.0) and not st.session_state.waypoints:
             st.session_state.start = [start_lat, start_lon]
-            # also seed waypoints if empty so user can use manual coords
-            if not st.session_state.waypoints:
-                st.session_state.waypoints = [(start_lat, start_lon)]
-        if (end_lat != 0.0 or end_lon != 0.0):
+            st.session_state.waypoints = [(float(start_lat), float(start_lon))]
+        if (end_lat != 0.0 or end_lon != 0.0) and not st.session_state.waypoints:
+            # if start was seeded above, now append end
+            if st.session_state.waypoints:
+                st.session_state.waypoints.append((float(end_lat), float(end_lon)))
+            else:
+                st.session_state.waypoints = [(float(end_lat), float(end_lon))]
             st.session_state.end = [end_lat, end_lon]
-            if not st.session_state.waypoints:
-                st.session_state.waypoints = [(start_lat, start_lon), (end_lat, end_lon)]
 
     if reset:
         st.session_state.start = [None, None]
@@ -651,7 +652,6 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         st.session_state["voyage_timestamp"] = None
         st.session_state["feedback_rating"] = 3
         st.session_state["feedback_text"] = "Average: Routine voyage with some manageable issues."
-        # Clear user waypoints and last click state as well
         st.session_state.waypoints = []
         st.session_state.last_map_click = None
 
@@ -659,14 +659,14 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
     map_container = st.container()
     with map_container:
         m = folium.Map(location=[20.5937,78.9629], zoom_start=5, tiles="CartoDB positron")
-        # show either waypoints (if present) or fallback to start/end
+
+        # display waypoints in order (first green, intermediates blue, last red)
         if st.session_state.waypoints:
             for idx, (lat, lon) in enumerate(st.session_state.waypoints):
-                # first waypoint green, intermediates blue, last red
                 if idx == 0:
                     icon = folium.Icon(color="green")
                     popup = f"Start (WP {idx+1})"
-                elif idx == len(st.session_state.waypoints)-1:
+                elif idx == len(st.session_state.waypoints) - 1:
                     icon = folium.Icon(color="red")
                     popup = f"End (WP {idx+1})"
                 else:
@@ -674,135 +674,191 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                     popup = f"WP {idx+1}"
                 folium.Marker([lat, lon], popup=popup, icon=icon).add_to(m)
         else:
+            # fallback to previously stored start/end markers (if any)
             if st.session_state.start != [None, None]:
                 folium.Marker(st.session_state.start, popup="Start", icon=folium.Icon(color="green")).add_to(m)
             if st.session_state.end != [None, None]:
                 folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m)
+
+        # get clicks
         map_click = st_folium(m, width="100%", height=600, key="click_map")
 
-    # NEW: collect multiple clicks as waypoints (first is start, last is end)
+    # Append every new click (in order) to waypoints.
+    # Use a last-click guard so reruns don't duplicate the same click.
     if map_click and map_click.get("last_clicked"):
-        lat = round(float(map_click["last_clicked"]["lat"]), 6)
-        lon = round(float(map_click["last_clicked"]["lng"]), 6)
-        this_click = (lat, lon)
-        # only process if new (protect against repeated reruns returning the same click)
+        lat = float(map_click["last_clicked"]["lat"])
+        lon = float(map_click["last_clicked"]["lng"])
+        this_click = (round(lat, 6), round(lon, 6))
         if st.session_state.last_map_click != this_click:
             st.session_state.last_map_click = this_click
-            if is_water(lat, lon):
-                # append waypoint (allowing many waypoints in order)
-                st.session_state.waypoints.append(this_click)
-                # update start/end session entries to reflect clicked waypoints
-                if st.session_state.waypoints:
-                    st.session_state.start = [st.session_state.waypoints[0][0], st.session_state.waypoints[0][1]]
-                    st.session_state.end = [st.session_state.waypoints[-1][0], st.session_state.waypoints[-1][1]]
+            # Append click regardless of whether water or land so user picks exact ordered waypoints.
+            # We'll perform lightweight avoidance when generating the route.
+            st.session_state.waypoints.append(this_click)
+            # update start/end to reflect first/last clicked
+            if st.session_state.waypoints:
+                st.session_state.start = [st.session_state.waypoints[0][0], st.session_state.waypoints[0][1]]
+                st.session_state.end = [st.session_state.waypoints[-1][0], st.session_state.waypoints[-1][1]]
+
+    # --- Helper: take a straight segment and split/insert detours if it crosses land ---
+    def build_segment_avoiding_land(p1, p2, max_depth=8):
+        """
+        Returns an ordered list of points starting at p2 that are reachable from p1 without hitting land
+        using a simple recursive midpoint-detour method.
+        p1, p2 are (lat, lon) tuples.
+        """
+        # internal recursive function
+        def _recurse(a, b, depth):
+            # safety
+            if depth > max_depth:
+                return [b]
+
+            # sample along the straight line; if any sample point lies on land, we need to detour
+            n_samples = 8
+            for i in range(1, n_samples):
+                t = i / float(n_samples)
+                lat = a[0] + (b[0] - a[0]) * t
+                lon = a[1] + (b[1] - a[1]) * t
+                if not is_water(lat, lon):
+                    # found land along the segment; compute midpoint and search for nearest water around it
+                    mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+                    # try offsets with increasing radius (degrees). small radii first.
+                    radii = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
+                    angles = list(range(0, 360, 30))
+                    for r in radii:
+                        for ang in angles:
+                            rad = math.radians(ang)
+                            cand_lat = mid[0] + r * math.cos(rad)
+                            cand_lon = mid[1] + r * math.sin(rad)
+                            if is_water(cand_lat, cand_lon):
+                                left = _recurse(a, (cand_lat, cand_lon), depth + 1)
+                                right = _recurse((cand_lat, cand_lon), b, depth + 1)
+                                # left includes its endpoint; combine carefully to avoid duplicates
+                                return left[:-1] + right
+                    # if no nearby water found, fallback by returning b (give up)
+                    return [b]
+            # no land samples -> straight segment OK
+            return [b]
+
+        return _recurse(p1, p2, 0)
 
     # --- Generate route ---
     if generate:
-        # If user provided waypoints by clicks, prefer them (first click start, last click end)
+        # require at least two waypoints (ordered by clicks) OR sidebar-provided start+end if waypoints empty
         if st.session_state.waypoints and len(st.session_state.waypoints) >= 2:
-            # use clicked waypoints as the route (keep order clicked)
-            st.session_state.route = [(float(lat), float(lon)) for lat, lon in st.session_state.waypoints]
-        # fallback to previous two-point behavior if no waypoints collected but start/end present
-        elif st.session_state.start != [None,None] and st.session_state.end != [None,None]:
-            # original algorithm (create multiple intermediate randomized water points between start & end)
+            clicked_route = [(float(lat), float(lon)) for lat, lon in st.session_state.waypoints]
+            # Build final_route by checking each consecutive segment and inserting detours when required
+            final_route = [clicked_route[0]]
+            for i in range(len(clicked_route) - 1):
+                a = final_route[-1]
+                b = clicked_route[i + 1]
+                seg_points = build_segment_avoiding_land(a, b)  # returns list of points ending at b (or detours)
+                # seg_points is list of endpoints (p2) in recursion; append them sequentially
+                for p in seg_points:
+                    # avoid duplicate consecutive points
+                    if (round(final_route[-1][0],6), round(final_route[-1][1],6)) != (round(p[0],6), round(p[1],6)):
+                        final_route.append((float(p[0]), float(p[1])))
+            st.session_state.route = final_route
+            # ensure session start/end reflect clicked sequence first/last exactly
+            st.session_state.start = [clicked_route[0][0], clicked_route[0][1]]
+            st.session_state.end = [clicked_route[-1][0], clicked_route[-1][1]]
+        elif st.session_state.start != [None, None] and st.session_state.end != [None, None]:
+            # fallback: retain original randomized-intermediate behavior between start & end (no waypoints clicked)
             num_waypoints = 5
             lats = [st.session_state.start[0]]
             lons = [st.session_state.start[1]]
-            for i in range(1,num_waypoints):
-                frac = i/num_waypoints
-                lat = st.session_state.start[0] + (st.session_state.end[0]-st.session_state.start[0])*frac
-                lon = st.session_state.start[1] + (st.session_state.end[1]-st.session_state.start[1])*frac
-                attempt=0
+            for i in range(1, num_waypoints):
+                frac = i / num_waypoints
+                lat = st.session_state.start[0] + (st.session_state.end[0] - st.session_state.start[0]) * frac
+                lon = st.session_state.start[1] + (st.session_state.end[1] - st.session_state.start[1]) * frac
+                attempt = 0
                 while True:
-                    lat_offset = random.uniform(-2,2)
-                    lon_offset = random.uniform(-2,2)
-                    new_lat = lat+lat_offset
-                    new_lon = lon+lon_offset
-                    if is_water(new_lat,new_lon) or attempt>10:
+                    lat_offset = random.uniform(-2, 2)
+                    lon_offset = random.uniform(-2, 2)
+                    new_lat = lat + lat_offset
+                    new_lon = lon + lon_offset
+                    if is_water(new_lat, new_lon) or attempt > 10:
                         break
-                    attempt+=1
+                    attempt += 1
                 lats.append(new_lat)
                 lons.append(new_lon)
             lats.append(st.session_state.end[0])
             lons.append(st.session_state.end[1])
-            st.session_state.route = list(zip(lats,lons))
+            st.session_state.route = list(zip(lats, lons))
         else:
-            st.error("Please select at least two waypoints on the map (first click = start, last click = end), or provide start & end coordinates in the sidebar.")
+            st.error("Please click at least two points on the map (first click = start, last click = end) or fill start and end coordinates in the sidebar.")
             st.session_state.route = None
 
-        # If a route is created (either from waypoints or generated), proceed to clusters & CSV
+        # proceed with cluster generation and CSV if route was created
         if st.session_state.route:
-            # Generate clusters (keep original behavior)
-            clusters=[]
-            for i in range(len(st.session_state.route)-1):
-                lat1,lon1 = st.session_state.route[i]
-                lat2,lon2 = st.session_state.route[i+1]
+            clusters = []
+            for i in range(len(st.session_state.route) - 1):
+                lat1, lon1 = st.session_state.route[i]
+                lat2, lon2 = st.session_state.route[i + 1]
                 for step in range(15):
-                    lat = lat1 + (lat2-lat1)*step/20
-                    lon = lon1 + (lon2-lon1)*step/20
+                    lat = lat1 + (lat2 - lat1) * step / 20
+                    lon = lon1 + (lon2 - lon1) * step / 20
                     for _ in range(8):
-                        attempt=0
+                        attempt = 0
                         while True:
-                            offset_lat=random.gauss(0,0.2)
-                            offset_lon=random.gauss(0,0.2)
-                            new_lat = lat+offset_lat
-                            new_lon = lon+offset_lon
-                            if is_water(new_lat,new_lon) or attempt>10:
+                            offset_lat = random.gauss(0, 0.2)
+                            offset_lon = random.gauss(0, 0.2)
+                            new_lat = lat + offset_lat
+                            new_lon = lon + offset_lon
+                            if is_water(new_lat, new_lon) or attempt > 10:
                                 break
-                            attempt+=1
+                            attempt += 1
                         clusters.append({
-                            "lat":new_lat,"lon":new_lon,
-                            "wave":random.randint(5,40),
-                            "wind":random.randint(5,40),
-                            "current":random.randint(5,40)
+                            "lat": new_lat, "lon": new_lon,
+                            "wave": random.randint(5, 40),
+                            "wind": random.randint(5, 40),
+                            "current": random.randint(5, 40)
                         })
                     for _ in range(10):
-                        attempt=0
+                        attempt = 0
                         while True:
-                            offset_lat=random.gauss(0,0.8)
-                            offset_lon=random.gauss(0,0.8)
-                            new_lat = lat+offset_lat
-                            new_lon = lon+offset_lon
-                            if is_water(new_lat,new_lon) or attempt>10:
+                            offset_lat = random.gauss(0, 0.8)
+                            offset_lon = random.gauss(0, 0.8)
+                            new_lat = lat + offset_lat
+                            new_lon = lon + offset_lon
+                            if is_water(new_lat, new_lon) or attempt > 10:
                                 break
-                            attempt+=1
+                            attempt += 1
                         clusters.append({
-                            "lat":new_lat,"lon":new_lon,
-                            "wave":random.randint(50,100),
-                            "wind":random.randint(50,100),
-                            "current":random.randint(50,100)
+                            "lat": new_lat, "lon": new_lon,
+                            "wave": random.randint(50, 100),
+                            "wind": random.randint(50, 100),
+                            "current": random.randint(50, 100)
                         })
             st.session_state.clusters = clusters
 
-            # mark route generated and reset show flag (no automatic plotting)
             st.session_state["route_generated"] = True
             st.session_state["show_res"] = False
 
-            # --- compute voyage metrics for CSV ---
+            # compute voyage metrics and append to CSV (same as before)
             def haversine(lat1, lon1, lat2, lon2):
-                R=6371.0
-                phi1,phi2=math.radians(lat1),math.radians(lat2)
-                dphi=math.radians(lat2-lat1)
-                dlambda=math.radians(lon2-lon1)
-                a=math.sin(dphi/2.0)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2.0)**2
-                c=2*math.atan2(math.sqrt(a),math.sqrt(1-a))
-                return R*c
-            total_distance_km=0
-            for i in range(len(st.session_state.route)-1):
-                lat1,lon1=st.session_state.route[i]
-                lat2,lon2=st.session_state.route[i+1]
-                total_distance_km+=haversine(lat1,lon1,lat2,lon2)
-            total_distance_nm=total_distance_km/1.852
-            hours_needed=total_distance_nm/ship_speed_knots
-            etd=datetime.combine(start_date,datetime.min.time())
-            eta=etd+timedelta(hours=hours_needed)
+                R = 6371.0
+                phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                dphi = math.radians(lat2 - lat1)
+                dlambda = math.radians(lon2 - lon1)
+                a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
+                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+                return R * c
 
-            # Update session start/end to reflect route endpoints (especially when using waypoints)
+            total_distance_km = 0
+            for i in range(len(st.session_state.route) - 1):
+                lat1, lon1 = st.session_state.route[i]
+                lat2, lon2 = st.session_state.route[i + 1]
+                total_distance_km += haversine(lat1, lon1, lat2, lon2)
+            total_distance_nm = total_distance_km / 1.852
+            hours_needed = total_distance_nm / ship_speed_knots
+            etd = datetime.combine(start_date, datetime.min.time())
+            eta = etd + timedelta(hours=hours_needed)
+
+            # Update start/end in session (already set from waypoints)
             if st.session_state.route and len(st.session_state.route) >= 1:
                 st.session_state.start = [st.session_state.route[0][0], st.session_state.route[0][1]]
                 st.session_state.end = [st.session_state.route[-1][0], st.session_state.route[-1][1]]
 
-            # --- Prepare voyage dict and append to CSV (defaults used immediately if user doesn't submit feedback) ---
             if not st.session_state.get("voyage_saved", False):
                 ts = datetime.now().isoformat()
                 st.session_state["voyage_timestamp"] = ts
@@ -832,6 +888,39 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
                     st.session_state["voyage_saved"] = True
                 except Exception as e:
                     st.error(f"Failed to save voyage: {e}")
+
+    # --- Final Map with route & clusters (unchanged display logic) ---
+    map_container2 = st.container()
+    with map_container2:
+        m2 = folium.Map(location=[20.5937,78.9629], zoom_start=5, tiles="CartoDB positron")
+        if st.session_state.waypoints:
+            for idx, (lat, lon) in enumerate(st.session_state.waypoints):
+                if idx == 0:
+                    icon = folium.Icon(color="green")
+                    popup = f"Start (WP {idx+1})"
+                elif idx == len(st.session_state.waypoints) - 1:
+                    icon = folium.Icon(color="red")
+                    popup = f"End (WP {idx+1})"
+                else:
+                    icon = folium.Icon(color="blue")
+                    popup = f"WP {idx+1}"
+                folium.Marker([lat, lon], popup=popup, icon=icon).add_to(m2)
+        else:
+            if st.session_state.start != [None, None]:
+                folium.Marker(st.session_state.start, popup="Start", icon=folium.Icon(color="green")).add_to(m2)
+            if st.session_state.end != [None, None]:
+                folium.Marker(st.session_state.end, popup="End", icon=folium.Icon(color="red")).add_to(m2)
+
+        if st.session_state.route:
+            folium.PolyLine(st.session_state.route, color="blue", weight=3).add_to(m2)
+        if st.session_state.clusters:
+            for point in st.session_state.clusters:
+                total = point["wave"] + point["wind"] + point["current"]
+                tooltip_text = f"Wave: {point['wave']} | Wind: {point['wind']} | Current: {point['current']} (Total: {total}/300)"
+                folium.CircleMarker(location=[point["lat"], point["lon"]],
+                                    radius=2, color="green", fill=True, fill_opacity=0.6,
+                                    tooltip=tooltip_text).add_to(m2)
+        st_folium(m2, width="100%", height=600, key="final_map")
 
 # ---------- SHIP DATA PAGE ----------
 elif st.session_state["nav"] == "SHIP DATA":
