@@ -444,8 +444,8 @@ st.markdown(
 # No JS to toggle dark class — removed theme toggle entirely so Streamlit default applies.
 
 # --- Feedback box solid background (use transparent + white text) ---
-fb_bg = "transparent"
-fb_text = "#ffffff"
+fb_bg = "#ffffff"
+fb_text = "#0f1724"
 
 feedback_css = (
     "<style>\n"
