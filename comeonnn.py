@@ -251,7 +251,7 @@ page_icon = str(ICO_PATH) if ICO_PATH.exists() else None
 st.set_page_config(page_title="IVROT", layout="wide", page_icon=page_icon)
 
 # ---------- Session state defaults ----------
-# Removed theme_flag; app will use Streamlit default theme + #0f1724 header/backgrounds.
+# Removed theme_flag; app will use Streamlit default theme + transparent header/backgrounds.
 if "nav" not in st.session_state:
     st.session_state["nav"] = "HOME"
 # flags for route & resistance UI
@@ -278,10 +278,10 @@ if "ship_df" not in st.session_state:
 if "ship_editor_state" not in st.session_state:
     st.session_state["ship_editor_state"] = {"mode": None}
 
-# ---------- Inject CSS (#0f1724 + white text where background #0f1724) ----------
+# ---------- Inject CSS (transparent + white text where background transparent) ----------
 root_vars = """
 :root {
-  --ivrot-bg: #0f1724;
+  --ivrot-bg: transparent;
   --ivrot-text: #ffffff;
   --ivrot-border: rgba(255,255,255,0.08);
   --ivrot-hover-shadow: 0 8px 18px rgba(255,255,255,0.04);
@@ -291,13 +291,13 @@ root_vars = """
 # Use a single f-string only where safe (root_vars inserted); other large CSS blocks will be concatenated to avoid brace parsing.
 st.markdown(
     "<style>\n" + root_vars + """
-    /* background: allow Streamlit default + use provided background image but keep containers #0f1724 */
+    /* background: allow Streamlit default + use provided background image but keep containers transparent */
     [data-testid="stAppViewContainer"] {
       background: url(\"""" + bg_uri + """\") no-repeat center center fixed;
       background-size: cover;
     }
 
-    /* Header (#0f1724 so Streamlit default theme applies) */
+    /* Header (transparent so Streamlit default theme applies) */
     .ivrot-header {
       position: relative;  
       top: 0;
@@ -312,7 +312,7 @@ st.markdown(
       box-sizing: border-box;
       border-radius: 0 0 12px 12px;
       transition: background-color 200ms ease, color 200ms ease;
-      background: #0f1724 !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
       overflow: visible !important;
     }
@@ -326,7 +326,7 @@ st.markdown(
 
     .ivrot-nav-row {
       display:flex;
-      background: #0f1724 !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
       flex-direction:row;
       gap:10px;
@@ -367,7 +367,7 @@ st.markdown(
     }
 
     .ivrot-right button {
-      background: #0f1724 !important; 
+      background: transparent !important; 
       border: none !important;
       font-size:16px !important;
       cursor:pointer !important;
@@ -399,7 +399,7 @@ st.markdown(
     div[data-testid="stSidebar"] .stSelectbox>div>div,
     div[data-testid="stSidebar"] .stSlider>div,
     div[data-testid="stSidebar"] .stSlider>div label {
-      background: #0f1724 !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
       border: 1px solid rgba(255,255,255,0.12) !important;
       box-shadow: none !important;
@@ -408,7 +408,7 @@ st.markdown(
     div[data-testid="stSidebar"] .stSelectbox select,
     div[data-testid="stSidebar"] .stSelectbox div[role="listbox"],
     div[data-testid="stSidebar"] .stSelectbox .st-bg {
-      background: #0f1724 !important;
+      background: transparent !important;
       color: var(--ivrot-text) !important;
       border: 1px solid rgba(255,255,255,0.12) !important;
     }
@@ -426,7 +426,7 @@ st.markdown(
       border: 1px solid rgba(255,255,255,0.12) !important;
     }
 
-    /* Make text white when background is #0f1724 */
+    /* Make text white when background is transparent */
     .ivrot-header,
     .ivrot-title,
     .ivrot-subtitle,
@@ -444,8 +444,8 @@ st.markdown(
 
 # No JS to toggle dark class — removed theme toggle entirely so Streamlit default applies.
 
-# --- Feedback box solid background (use #0f1724 + white text) ---
-fb_bg = "#0f1724"
+# --- Feedback box solid background (use transparent + white text) ---
+fb_bg = "transparent"
 fb_text = "#ffffff"
 
 feedback_css = (
@@ -458,7 +458,7 @@ feedback_css = (
     ".st-expander,\n"
     ".stExpanderHeader,\n"
     ".stExpanderContent {\n"
-    "  background: #0f1724 !important;\n"
+    "  background: transparent !important;\n"
     "  color: var(--ivrot-feedback-text) !important;\n"
     "  padding: 12px 14px !important;\n"
     "  border-radius: 10px !important;\n"
@@ -469,11 +469,11 @@ feedback_css = (
     ".stExpander textarea,\n"
     ".stExpander input {\n"
     "  color: var(--ivrot-feedback-text) !important;\n"
-    "  background: #0f1724 !important;\n"
+    "  background: transparent !important;\n"
     "}\n"
     "div[data-testid=\"stExpander\"] .stButton > button,\n"
     ".stExpander .stButton > button {\n"
-    "  color: var(--ivrot-feedback-text) !important;background: #0f1724 !important;\n  border-color: var(--ivrot-feedback-text) !important;\n"
+    "  color: var(--ivrot-feedback-text) !important;background: transparent !important;\n  border-color: var(--ivrot-feedback-text) !important;\n"
     "}\n"
     "</style>\n"
 )
@@ -868,9 +868,9 @@ elif st.session_state["nav"] == "NEW TRAJECTORY":
         except Exception as e:
             st.warning(f"Could not generate resistance plot: {e}")
 
-    # --- Feedback expander handling (non-#0f1724) ---
+    # --- Feedback expander handling (non-transparent) ---
     if st.session_state.get("open_feedback", False):
-        # Use expander (#0f1724) for feedback UI
+        # Use expander (transparent) for feedback UI
         with st.expander("Voyage Feedback", expanded=True):
             st.write("Please provide your feedback for this voyage. If you close without submitting, the default rating/text will remain.")
             with st.form("feedback_form"):
