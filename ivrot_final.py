@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from io import StringIO
 import os
 import csv
-
+import webbrowser
 import time
 
 import streamlit as st
