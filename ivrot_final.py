@@ -347,6 +347,9 @@ st.markdown(
       overflow: visible !important;
     }
 
+    <script src="https://cdn.botpress.cloud/webchat/v3.5/inject.js"></script>
+    <script src="https://files.bpcontent.cloud/2026/02/01/03/20260201035428-44B8ZP0H.js" defer></script>
+    
     .ivrot-left { display:flex; align-items:center; gap:16px; min-width:40px; }
     .ivrot-left img { height:200px; width:auto; display:block; }
 
