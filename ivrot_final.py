@@ -786,7 +786,10 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
     # -----------------------
     map_container = st.container()
     with map_container:
-        m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles="CartoDB positron")
+        m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles=("https://basemaps.cartocdn.com/"
+        "rastertiles/voyager/{z}/{x}/{y}.png"
+        f"?key={CARTO_API_KEY}"), attr='&copy; OpenStreetMap contributors &copy; CARTO')
+
 
         # draw ordered markers
         for idx, item in enumerate(st.session_state.route_points):
