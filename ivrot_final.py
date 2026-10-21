@@ -1064,7 +1064,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
         if st.session_state.route:
             folium.PolyLine(st.session_state.route, color="blue", weight=3).add_to(m2)
 
-        # clusters
+        """# clusters
         if st.session_state.clusters:
             for point in st.session_state.clusters:
                 total_env = point["wave"] + point["wind"] + point["current"]
@@ -1079,7 +1079,45 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
                 radius = 2 + (point["score"] / 120.0)
                 folium.CircleMarker(location=[point["lat"], point["lon"]],
                                     radius=radius, color=color, fill=True, fill_opacity=0.7,
-                                    tooltip=tooltip_text).add_to(m2)
+                                    tooltip=tooltip_text).add_to(m2)"""
+        # Clusters - debugging version
+        st.write("Number of clusters:", len(st.session_state.clusters))
+        
+        if st.session_state.clusters:
+            for point in st.session_state.clusters:
+                lat = float(point["lat"])
+                lon = float(point["lon"])
+        
+                total_env = point["wave"] + point["wind"] + point["current"]
+        
+                tooltip_text = (
+                    f"Wave: {point['wave']} | Wind: {point['wind']} | "
+                    f"Current: {point['current']} "
+                    f"(Env: {total_env}/300) | "
+                    f"Dist to route: {point['distance_km_to_route']} km | "
+                    f"Score: {point['score']}/300"
+                )
+        
+                if point["score"] <= 100:
+                    color = "green"
+                elif point["score"] <= 200:
+                    color = "orange"
+                else:
+                    color = "red"
+        
+                folium.CircleMarker(
+                    location=[lat, lon],
+                    radius=7,
+                    color=color,
+                    weight=2,
+                    fill=True,
+                    fill_color=color,
+                    fill_opacity=0.9,
+                    tooltip=tooltip_text,
+                ).add_to(m2)
+        
+                # Temporary: print coordinates to verify the data
+                st.write(f"Cluster: lat={lat}, lon={lon}, score={point['score']}")
 
         st_folium(m2, width="100%", height=600, key="final_map")
 
