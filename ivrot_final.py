@@ -1089,7 +1089,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
         
                 folium.CircleMarker(
                     location=[lat, lon],
-                    radius=7,
+                    radius=2 + (point["score"] / 120.0),
                     color=color,
                     weight=2,
                     fill=True,
