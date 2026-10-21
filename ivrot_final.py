@@ -785,6 +785,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
     # Map for selecting points
     # -----------------------
     map_container = st.container()
+    CARTO_API_KEY = "cb1_4qgd_1_ff085edb079c5db7edead76c"
     with map_container:
         m = folium.Map(location=[20.5937, 78.9629], zoom_start=5, tiles=("https://basemaps.cartocdn.com/"
         "rastertiles/voyager/{z}/{x}/{y}.png"
