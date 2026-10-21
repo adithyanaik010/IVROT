@@ -1081,7 +1081,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
                                     radius=radius, color=color, fill=True, fill_opacity=0.7,
                                     tooltip=tooltip_text).add_to(m2)"""
         # Clusters - debugging version
-        st.write("Number of clusters:", len(st.session_state.clusters))
+        
         
         if st.session_state.clusters:
             for point in st.session_state.clusters:
@@ -1116,8 +1116,7 @@ if st.session_state.get("nav") == "NEW TRAJECTORY":
                     tooltip=tooltip_text,
                 ).add_to(m2)
         
-                # Temporary: print coordinates to verify the data
-                st.write(f"Cluster: lat={lat}, lon={lon}, score={point['score']}")
+                
 
         st_folium(m2, width="100%", height=600, key="final_map")
 
